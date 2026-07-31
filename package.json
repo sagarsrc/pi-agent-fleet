@@ -1,0 +1,28 @@
+{
+  "name": "pi-fleet-extension",
+  "version": "0.1.0",
+  "description": "DAG-of-agents fleet extension for pi",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.80.0",
+    "@earendil-works/pi-ai": ">=0.80.0"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.80.0",
+    "@earendil-works/pi-ai": "^0.80.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.0",
+    "@types/node": "^22.0.0"
+  },
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  }
+}
