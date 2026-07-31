@@ -139,7 +139,7 @@ async function currentState(fleet: ActiveFleet): Promise<FleetState> {
 
 async function statusText(fleet: ActiveFleet): Promise<string> {
   const state = await currentState(fleet);
-  return `${renderDag(fleet.spec, state)}\n\n${buildWidgetLines(fleet.spec, state).join("\n")}`;
+  return renderDag(fleet.spec, state);
 }
 
 async function dagPreview(spec: FleetSpec, state: FleetState | undefined, fleetRoot: string): Promise<string> {
