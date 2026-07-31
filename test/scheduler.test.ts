@@ -69,4 +69,20 @@ describe("runFleet", () => {
     expect(s.nodes.a.status).toBe("completed");
     expect(s.nodes.b.status).toBe("completed");
   });
+  it("does not overwrite killed status with in-flight spawn completion", async () => {
+    const sp = spec();
+    sp.workers = [sp.workers[0]];
+    const killSwitch = { killed: false };
+    const s = await runFleet({
+      spec: sp, fleetRoot: await root(), repoCwd: "/tmp", killSwitch,
+      spawn: async () => {
+        await new Promise((r) => setTimeout(r, 20));
+        killSwitch.killed = true;
+        await new Promise((r) => setTimeout(r, 20));
+        return { ok: true, turns: 1, tokens: 10 };
+      },
+    });
+    expect(s.status).toBe("killed");
+    expect(s.nodes.a.status).toBe("killed");
+  });
 });

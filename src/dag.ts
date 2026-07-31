@@ -79,6 +79,12 @@ export function validateFleetSpec(
     for (const o of outputs) {
       if (!KINDS.includes(o.kind as OutputKind)) errors.push(`worker "${id}": bad output kind "${String(o.kind)}"`);
       if (typeof o.path !== "string" || o.path.length === 0) errors.push(`worker "${id}": output path required`);
+      if (typeof o.path === "string" && o.path.length > 0) {
+        const segments = o.path.split(/[/\\]/);
+        if (o.path.startsWith("/") || /^[A-Za-z]:/.test(o.path) || segments.includes("..")) {
+          errors.push(`worker "${id}": output path must be relative and stay within the repo`);
+        }
+      }
     }
     workers.push({
       id,

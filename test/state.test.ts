@@ -30,4 +30,11 @@ describe("state", () => {
     expect(s2.nodes.a.status).toBe("completed");
     expect(s2.cost_usd_estimate).toBe(0.5);
   });
+  it("supports concurrent writeState calls without tmp-name race", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fleet-state-race-"));
+    const s = initFleetState(spec);
+    await Promise.all([writeState(root, s), writeState(root, s)]);
+    const back = await readState(root);
+    expect(back).toEqual(s);
+  });
 });

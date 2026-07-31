@@ -60,6 +60,7 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
       slots--;
       await patch(w.id, { status: "running", started_at: new Date().toISOString() });
       const p = opts.spawn(w.id).then(async (res) => {
+        if (opts.killSwitch?.killed) return;
         if (!res.ok) {
           await patch(w.id, { status: "failed", ended_at: new Date().toISOString(), turns: res.turns, tokens: res.tokens });
           return;

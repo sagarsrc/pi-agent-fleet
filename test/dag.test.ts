@@ -51,6 +51,20 @@ describe("validateFleetSpec", () => {
       expect(r.spec.workers[0].outputs).toEqual([]);
     }
   });
+  it("rejects absolute and parent-directory output paths", () => {
+    const abs = structuredClone(base) as any;
+    abs.workers[0].outputs = [{ path: "/etc/passwd", kind: "markdown", required: true }];
+    expect(validateFleetSpec(abs).ok).toBe(false);
+    const win = structuredClone(base) as any;
+    win.workers[0].outputs = [{ path: "C:\\secret.txt", kind: "markdown", required: true }];
+    expect(validateFleetSpec(win).ok).toBe(false);
+    const dotdot = structuredClone(base) as any;
+    dotdot.workers[0].outputs = [{ path: "../../etc/passwd", kind: "markdown", required: true }];
+    expect(validateFleetSpec(dotdot).ok).toBe(false);
+    const segmentDotDot = structuredClone(base) as any;
+    segmentDotDot.workers[0].outputs = [{ path: "foo/../bar.md", kind: "markdown", required: true }];
+    expect(validateFleetSpec(segmentDotDot).ok).toBe(false);
+  });
 });
 
 describe("getDependents", () => {

@@ -21,7 +21,8 @@ export async function readState(fleetRoot: string): Promise<FleetState> {
 }
 
 export async function writeState(fleetRoot: string, state: FleetState): Promise<void> {
-  const tmp = join(fleetRoot, `.state.json.tmp`);
+  const unique = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}`;
+  const tmp = join(fleetRoot, `.state.json.${unique}.tmp`);
   await writeFile(tmp, `${JSON.stringify(state, null, 2)}\n`, "utf-8");
   await rename(tmp, join(fleetRoot, "state.json"));
 }
