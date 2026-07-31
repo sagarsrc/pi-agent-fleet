@@ -9,9 +9,14 @@ const ICON: Record<NodeStatus, string> = {
 
 export function renderDag(spec: FleetSpec, state?: FleetState): string {
   const layers = topoLayers(spec);
+  const modelOf = (id: string): string => {
+    const w = spec.workers.find((x) => x.id === id);
+    return w?.model ?? spec.config.model;
+  };
   const label = (id: string): string => {
     const st = state?.nodes[id]?.status;
-    return st ? `${ICON[st]} ${id}` : id;
+    const base = `${id} (${modelOf(id)})`;
+    return st ? `${ICON[st]} ${base}` : base;
   };
   const lines: string[] = [];
   const header = layers.map((l, i) => `layer ${i}: ${l.map(label).join("  ")}`).join("\n");

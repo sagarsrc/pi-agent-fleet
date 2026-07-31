@@ -170,7 +170,7 @@ export default function (pi: ExtensionAPI) {
     name: "fleet_plan",
     label: "Fleet Plan",
     description:
-      "Validate a fleet DAG definition, create its fleet root, and return an ASCII preview. Does NOT launch. Call fleet_launch after the user confirms the preview.",
+      "Validate a fleet DAG definition, create its fleet root, and return an ASCII preview. Does NOT launch. Call fleet_launch after the user confirms the preview. Model selection standard: cheap/fast models (e.g. gpt-5.4-mini, kimi-for-coding-highspeed) for trivial writers/validators; coding models (e.g. kimi-for-coding, gpt-5.5) for code-run workers; strong reasoning models (e.g. k3, gpt-5.6-sol) for reviewers/synthesizers. Set worker.model per node to override config.model.",
     promptSnippet: "Plan a DAG-of-agents fleet from a fleet definition without launching it.",
     parameters: Type.Object({
       fleet: Type.Object({}, { additionalProperties: true, description: "Fleet definition (fleet.json shape)" }),

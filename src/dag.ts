@@ -59,7 +59,7 @@ export function validateFleetSpec(
   const cfg = (r?.config ?? {}) as Record<string, unknown>;
   const maxConcurrent = typeof cfg.max_concurrent === "number" ? cfg.max_concurrent : 4;
   if (maxConcurrent < 1) errors.push("config.max_concurrent must be >= 1");
-  const model = typeof cfg.model === "string" ? cfg.model : "k2p6";
+  const model = typeof cfg.model === "string" ? cfg.model : "gpt-5.4";
   const warnCost = typeof cfg.warn_cost_usd === "number" ? cfg.warn_cost_usd : undefined;
 
   const rawWorkers = Array.isArray(r?.workers) ? (r.workers as Record<string, unknown>[]) : [];
