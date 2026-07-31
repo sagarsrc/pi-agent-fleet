@@ -166,6 +166,36 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.setStatus("fleet", "");
   });
 
+  const OutputSchema = Type.Object({
+    path: Type.String({ description: 'output/... paths resolve under the worker dir; anything else is repo-relative (code edits)' }),
+    kind: Type.Union([
+      Type.Literal("markdown"), Type.Literal("file-exists"),
+      Type.Literal("verdict"), Type.Literal("json"), Type.Literal("yaml"),
+    ]),
+    required: Type.Optional(Type.Boolean()),
+  });
+  const WorkerSchema = Type.Object({
+    id: Type.String({ description: "kebab-case, e.g. counter-a" }),
+    type: Type.Union([
+      Type.Literal("research"), Type.Literal("code-run"),
+      Type.Literal("reviewer"), Type.Literal("write"), Type.Literal("read-only"),
+    ]),
+    task: Type.String({ description: "Full task instructions for the worker" }),
+    model: Type.Optional(Type.String({ description: "Per-worker model override, e.g. gpt-5.4-mini" })),
+    depends_on: Type.Optional(Type.Array(Type.String())),
+    outputs: Type.Optional(Type.Array(OutputSchema)),
+  });
+  const FleetSchema = Type.Object({
+    fleet_name: Type.String({ description: "kebab-case" }),
+    type: Type.Literal("dag"),
+    config: Type.Optional(Type.Object({
+      max_concurrent: Type.Optional(Type.Number()),
+      model: Type.Optional(Type.String({ description: "Fleet-wide default model" })),
+      warn_cost_usd: Type.Optional(Type.Number()),
+    })),
+    workers: Type.Array(WorkerSchema, { minItems: 1 }),
+  });
+
   pi.registerTool({
     name: "fleet_plan",
     label: "Fleet Plan",
@@ -173,7 +203,7 @@ export default function (pi: ExtensionAPI) {
       "Validate a fleet DAG definition, create its fleet root, and return an ASCII preview. Does NOT launch. Call fleet_launch after the user confirms the preview. Model selection standard: cheap/fast models (e.g. gpt-5.4-mini, kimi-for-coding-highspeed) for trivial writers/validators; coding models (e.g. kimi-for-coding, gpt-5.5) for code-run workers; strong reasoning models (e.g. k3, gpt-5.6-sol) for reviewers/synthesizers. Set worker.model per node to override config.model.",
     promptSnippet: "Plan a DAG-of-agents fleet from a fleet definition without launching it.",
     parameters: Type.Object({
-      fleet: Type.Object({}, { additionalProperties: true, description: "Fleet definition (fleet.json shape)" }),
+      fleet: FleetSchema,
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
       const v = validateFleetSpec(params.fleet);
