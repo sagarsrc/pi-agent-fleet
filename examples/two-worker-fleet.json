@@ -1,0 +1,21 @@
+{
+  "fleet_name": "smoke",
+  "type": "dag",
+  "config": { "max_concurrent": 2, "model": "gpt-5.4-mini" },
+  "workers": [
+    {
+      "id": "research",
+      "type": "write",
+      "task": "Write a markdown file with a heading and exactly 3 bullet points about good CLI UX. Under 60 words total.",
+      "depends_on": [],
+      "outputs": [{ "path": "output/findings.md", "kind": "markdown", "required": true }]
+    },
+    {
+      "id": "summarize",
+      "type": "write",
+      "task": "Read the upstream findings file and write a markdown file with a heading and one sentence summary.",
+      "depends_on": ["research"],
+      "outputs": [{ "path": "output/summary.md", "kind": "markdown", "required": true }]
+    }
+  ]
+}
