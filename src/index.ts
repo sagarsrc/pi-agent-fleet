@@ -194,15 +194,17 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "fleet_launch",
     label: "Fleet Launch",
-    description: "Launch the active planned fleet. Runs the DAG in the background and updates the live fleet widget.",
+    description: "Launch the active planned fleet. Runs the DAG in the background and updates the live fleet widget. Pass skip_confirm: true to bypass the interactive confirmation (e.g. when the user already approved the plan or is running unattended).",
     promptSnippet: "Launch the currently planned fleet after preview confirmation.",
-    parameters: Type.Object({}),
-    async execute(_id, _params, _signal, _onUpdate, ctx) {
+    parameters: Type.Object({
+      skip_confirm: Type.Optional(Type.Boolean({ description: "Skip the interactive launch confirmation dialog" })),
+    }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
       if (!active) return textResult("no fleet planned yet");
       if (active.running) return textResult("fleet already running");
       const fleet = active;
 
-      if (ctx.hasUI) {
+      if (ctx.hasUI && !params.skip_confirm) {
         const ok = await ctx.ui.confirm("Launch fleet?", renderDag(fleet.spec));
         if (!ok) return textResult("fleet launch aborted");
       }
@@ -217,10 +219,21 @@ export default function (pi: ExtensionAPI) {
           if (!worker) return { ok: false, turns: 0, tokens: 0, error: `unknown worker "${nodeId}"` };
 
           let resolvedModel: Model<Api> | undefined;
+          let modelNote: string | undefined;
           if (worker.model) {
+            // explicit per-worker model: hard error if unresolvable
             const resolved = resolveModelReference(ctx.modelRegistry, worker.model);
             if (!resolved.ok) return { ok: false, turns: 0, tokens: 0, error: resolved.error };
             resolvedModel = resolved.model;
+          } else if (fleet.spec.config.model) {
+            // fleet default: warn + session default if unresolvable (fleet may be planned on another machine)
+            const resolved = resolveModelReference(ctx.modelRegistry, fleet.spec.config.model);
+            if (resolved.ok) resolvedModel = resolved.model;
+            else modelNote = `config.model "${fleet.spec.config.model}" not found, using session default`;
+          }
+          if (modelNote) {
+            fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { status_note: modelNote });
+            updateWidget(ctx, fleet);
           }
 
           const prompt = await readFile(join(fleet.fleetRoot, "workers", nodeId, "prompt.md"), "utf-8");
