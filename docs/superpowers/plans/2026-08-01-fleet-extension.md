@@ -19,6 +19,7 @@
 - Every worker prompt MUST end with: `Save ALL output files to <FLEET_ROOT>/workers/<id>/output/ — use absolute paths.` (unless the output is a repo-relative code file — one destination rule per spec §6)
 - Contract kinds: `markdown`, `file-exists`, `verdict`, `json`, `yaml` — verified at worker exit
 - Worker tool allowlists by type (pi built-in names): `research` → `read,grep,find,ls,write,web_search,fetch_content`; `code-run` → `read,bash,edit,write,grep,find,ls`; `reviewer` → `read,write,grep,find,ls`; `write` → `read,write,grep,find,ls`; `read-only` → `read,grep,find,ls`
+- Testing economics (from `/Users/sagar/work/skills/test/fleet` fixture pattern): zero-API tests wherever possible — unit tests use injected fake `SessionFactory`; pipeline e2e uses scripted fake sessions that write real output files; live-model runs reserved for ONE final smoke with `openai-codex/gpt-5.4-mini` and trivial tasks (<100 words output)
 
 ---
 
@@ -1724,30 +1725,82 @@ git commit -m "add: extension entry with fleet tools, commands, live widget"
 
 **Files:**
 - Create: `examples/two-worker-fleet.json`
+- Create: `test/e2e.test.ts` (zero-API pipeline test)
 - Modify: `README.md` (usage section)
 
 **Interfaces:**
 - Consumes: everything
 
-- [ ] **Step 1: Write examples/two-worker-fleet.json**
+**Testing economics (constraint):** two layers. Layer 1 = zero-API e2e via scripted fake `SessionFactory` through the real `runFleet` + contracts + report path. Layer 2 = ONE live smoke run with `openai-codex/gpt-5.4-mini` and trivial tasks.
+
+- [ ] **Step 1: Write zero-API e2e test**
+
+```typescript
+// test/e2e.test.ts
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { writeReport } from "../src/report.js";
+import { runFleet } from "../src/scheduler.js";
+import { readState } from "../src/state.js";
+import type { FleetSpec } from "../src/types.js";
+
+describe("e2e pipeline (fake spawn)", () => {
+  it("research -> summarize completes with contracts and report", async () => {
+    const fleetRoot = await mkdtemp(join(tmpdir(), "fleet-e2e-"));
+    const spec: FleetSpec = {
+      fleet_name: "smoke", type: "dag",
+      config: { max_concurrent: 2, model: "gpt-5.4-mini" },
+      workers: [
+        { id: "research", type: "research", task: "t", depends_on: [],
+          outputs: [{ path: "output/findings.md", kind: "markdown", required: true }] },
+        { id: "summarize", type: "write", task: "t", depends_on: ["research"],
+          outputs: [{ path: "output/summary.md", kind: "markdown", required: true }] },
+      ],
+    };
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    for (const id of ["research", "summarize"]) {
+      await mkdir(join(fleetRoot, "workers", id, "output"), { recursive: true });
+    }
+    const state = await runFleet({
+      spec, fleetRoot, repoCwd: "/tmp",
+      spawn: async (id) => {
+        await writeFile(join(fleetRoot, "workers", id, "output", id === "research" ? "findings.md" : "summary.md"), "# Result\nbody");
+        return { ok: true, turns: 2, tokens: 500 };
+      },
+    });
+    expect(state.status).toBe("completed");
+    const md = await writeReport({ spec, state, fleetRoot, repoCwd: "/tmp" });
+    expect(md).toContain("smoke");
+    expect(md).toContain("output/findings.md");
+    const persisted = await readState(fleetRoot);
+    expect(persisted.nodes.summarize.status).toBe("completed");
+  });
+});
+```
+
+Run: `npm test` — expect PASS (fails until Task 9/10 exist; this test is written here and passes after those tasks).
+
+- [ ] **Step 2: Write examples/two-worker-fleet.json** — trivial tasks, cheapest model
 
 ```json
 {
   "fleet_name": "smoke",
   "type": "dag",
-  "config": { "max_concurrent": 2, "model": "k2p6" },
+  "config": { "max_concurrent": 2, "model": "gpt-5.4-mini" },
   "workers": [
     {
       "id": "research",
-      "type": "research",
-      "task": "Write 3 bullet points about what makes a good CLI UX. Keep it under 100 words.",
+      "type": "write",
+      "task": "Write a markdown file with a heading and exactly 3 bullet points about good CLI UX. Under 60 words total.",
       "depends_on": [],
       "outputs": [{ "path": "output/findings.md", "kind": "markdown", "required": true }]
     },
     {
       "id": "summarize",
       "type": "write",
-      "task": "Read the upstream findings and write a one-sentence summary.",
+      "task": "Read the upstream findings file and write a markdown file with a heading and one sentence summary.",
       "depends_on": ["research"],
       "outputs": [{ "path": "output/summary.md", "kind": "markdown", "required": true }]
     }
@@ -1755,18 +1808,18 @@ git commit -m "add: extension entry with fleet tools, commands, live widget"
 }
 ```
 
-- [ ] **Step 2: Run smoke fleet**
+- [ ] **Step 3: Run live smoke fleet (ONE run, gpt-5.4-mini)**
 
 Run: `pi -e ./src/index.ts -p "Plan and launch the fleet defined in examples/two-worker-fleet.json, then report status when done."`
-Expected: `.fleet/smoke-*/report.md` exists; both nodes `completed`; report contains produced outputs. If headless `-p` skips the confirm (hasUI=false), launch proceeds — note this in README.
+Expected: `.fleet/smoke-*/report.md` exists; both nodes `completed`; report lists produced outputs. If headless `-p` skips the confirm (hasUI=false), launch proceeds — note this in README. If the model refuses or errors, record the failure in the experiment docs and retry ONCE with `kimi-coding/kimi-for-coding-highspeed`.
 
-- [ ] **Step 3: Write README usage section** — install (`pi -e` dev mode, or `pi install` later), tool list, `/fleet` commands, link to spec + ontology.
+- [ ] **Step 4: Write README usage section** — install (`pi -e` dev mode, or `pi install` later), tool list, `/fleet` commands, testing economics note (fake sessions for tests, mini model for smoke), link to spec + ontology.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add examples/two-worker-fleet.json README.md
-git commit -m "add: smoke fleet example and usage docs"
+git add examples/two-worker-fleet.json test/e2e.test.ts README.md
+git commit -m "add: zero-api e2e pipeline test and live smoke example"
 ```
 
 ---
