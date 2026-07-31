@@ -364,13 +364,10 @@ export default function (pi: ExtensionAPI) {
       if (cmd === "viz") {
         const lines = renderDag(active.spec, active.state).split("\n");
         ctx.ui.setWidget("fleet", lines);
-        ctx.ui.notify(lines.join("\n"), "info");
         return;
       }
       if (cmd === "status" || cmd === "") {
-        const text = await statusText(active);
         ctx.ui.setWidget("fleet", buildWidgetLines(active.spec, active.state));
-        ctx.ui.notify(text, "info");
         return;
       }
       if (cmd === "clear") {

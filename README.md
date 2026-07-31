@@ -36,8 +36,9 @@ In a pi session, use the registered tools:
 
 User commands:
 
-- `/fleet viz` — render the ASCII DAG into the widget/notification.
-- `/fleet status` — show the live status table.
+- `/fleet viz` — render the ASCII DAG into the widget.
+- `/fleet status` — show the live status table in the widget.
+- `/fleet clear` — dismiss the widget.
 - `/fleet kill all` — kill the whole fleet.
 
 When the fleet finishes, read `.fleet/<name>-<ts>/report.md` for the summary, node table, contracts, and artifacts list.
