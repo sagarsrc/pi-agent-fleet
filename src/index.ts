@@ -258,12 +258,13 @@ export default function (pi: ExtensionAPI) {
       }).then(async (state) => {
         fleet.state = state;
         fleet.running = false;
-        updateWidget(ctx, fleet);
+        if (ctx.hasUI) ctx.ui.setWidget("fleet", []);
         const report = await writeReport({ spec: fleet.spec, state, fleetRoot: fleet.fleetRoot, repoCwd: ctx.cwd });
         if (ctx.hasUI) ctx.ui.notify(`fleet ${state.status}; report: ${join(fleet.fleetRoot, "report.md")}`, state.status === "completed" ? "info" : "warning");
         return report;
       }).catch((err: unknown) => {
         fleet.running = false;
+        if (ctx.hasUI) ctx.ui.setWidget("fleet", []);
         const error = err instanceof Error ? err.message : String(err);
         if (ctx.hasUI) ctx.ui.notify(`fleet failed: ${error}`, "error");
       });
@@ -310,7 +311,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("fleet", {
-    description: "Fleet commands: /fleet viz, /fleet status, /fleet kill all",
+    description: "Fleet commands: /fleet viz, /fleet status, /fleet clear, /fleet kill all",
     handler: async (args, ctx) => {
       const [cmd, target] = args.trim().split(/\s+/);
       if (!active) {
@@ -329,12 +330,16 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify(text, "info");
         return;
       }
+      if (cmd === "clear") {
+        ctx.ui.setWidget("fleet", []);
+        return;
+      }
       if (cmd === "kill") {
         const text = await killFleet(target ?? "");
         ctx.ui.notify(text, text === "fleet kill requested" ? "warning" : "error");
         return;
       }
-      ctx.ui.notify("usage: /fleet viz | /fleet status | /fleet kill all", "warning");
+      ctx.ui.notify("usage: /fleet viz | /fleet status | /fleet clear | /fleet kill all", "warning");
     },
   });
 }
