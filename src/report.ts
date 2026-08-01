@@ -1,11 +1,16 @@
 import { execFile } from "node:child_process";
 import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import type { FleetSpec, FleetState } from "./types.js";
 import { renderDag } from "./viz.js";
 
 const execFileP = promisify(execFile);
+
+function formatDuration(ms: number): string {
+  if (ms <= 0) return "0.0s";
+  return `${(ms / 1000).toFixed(1)}s`;
+}
 
 export async function gitDiffStat(repoCwd: string, _sinceIso: string): Promise<string> {
   try {
@@ -40,6 +45,28 @@ export async function writeReport(opts: {
       ? n.contract_result.ok ? "✓" : `✗ ${n.contract_result.checks.filter((c) => !c.ok).map((c) => c.path).join(", ")}`
       : "—";
     lines.push(`| ${w.id} | ${n.status} | ${n.turns} | ${n.tokens} | $${n.cost_usd_estimate.toFixed(2)} | ${contract} | ${n.produced_outputs.join(", ") || "—"} |`);
+  }
+  if (spec.config.loop) {
+    lines.push("", "## Iterations", "", "| n | verdict | tokens | cost | duration |",
+      "|---|---|---|---|---|");
+    for (const it of state.iterations) {
+      const tokens = Object.values(it.nodes).reduce((sum, n) => sum + n.tokens, 0);
+      const cost = Object.values(it.nodes).reduce((sum, n) => sum + n.cost_usd_estimate, 0);
+      const durationMs = new Date(it.ended_at).getTime() - new Date(it.started_at).getTime();
+      lines.push(`| ${it.n} | ${it.verdict ?? "—"} | ${tokens} | $${cost.toFixed(2)} | ${formatDuration(durationMs)} |`);
+    }
+    for (const it of state.iterations) {
+      lines.push("", `### Iteration ${it.n}`, "");
+      lines.push(`- verdict: ${it.verdict ?? "—"}`);
+      if (it.verdict_body) lines.push("", it.verdict_body);
+    }
+    if (spec.workers.some((w) => w.worktree)) {
+      lines.push("", "## Worktree branches", "");
+      const base = basename(fleetRoot);
+      for (const w of spec.workers) {
+        if (w.worktree) lines.push(`- fleet/${base}/${w.id}`);
+      }
+    }
   }
   lines.push("", "## Code changes", "", "```", await gitDiffStat(repoCwd, state.created_at), "```", "");
   lines.push("## Artifacts", "", `- state: ${join(fleetRoot, "state.json")}`,
