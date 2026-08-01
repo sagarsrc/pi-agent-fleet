@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -29,6 +29,23 @@ describe("state", () => {
     expect(s.nodes.a.status).toBe("pending");
     expect(s2.nodes.a.status).toBe("completed");
     expect(s2.cost_usd_estimate).toBe(0.5);
+  });
+  it("readState tolerates v1 state.json missing new loop fields", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fleet-state-v1-"));
+    const v1 = {
+      fleet_name: "t",
+      status: "planned",
+      created_at: new Date().toISOString(),
+      cost_usd_estimate: 0,
+      nodes: { a: { status: "pending", turns: 0, tokens: 0, cost_usd_estimate: 0, produced_outputs: [] } },
+    };
+    await writeFile(join(root, "state.json"), JSON.stringify(v1), "utf-8");
+    const back = await readState(root);
+    expect(back.iteration).toBe(1);
+    expect(back.lgtm_streak).toBe(0);
+    expect(back.paused).toBe(false);
+    expect(back.iterations).toEqual([]);
+    expect(back.fleet_name).toBe("t");
   });
   it("supports concurrent writeState calls without tmp-name race", async () => {
     const root = await mkdtemp(join(tmpdir(), "fleet-state-race-"));
