@@ -1,4 +1,4 @@
-import type { FleetSpec, OutputKind, WorkerSpec, WorkerType } from "./types.js";
+import type { FleetSpec, GateKind, LoopConfig, OutputKind, WorkerSpec, WorkerType } from "./types.js";
 
 export class CycleError extends Error {
   constructor(public remaining: string[]) {
@@ -93,6 +93,8 @@ export function validateFleetSpec(
       model: typeof w.model === "string" ? w.model : undefined,
       depends_on: Array.isArray(w.depends_on) ? (w.depends_on as string[]) : [],
       outputs: outputs.map((o) => ({ path: String(o.path), kind: o.kind as OutputKind, required: o.required !== false })),
+      iterate: w.iterate !== false,
+      worktree: w.worktree === true,
     });
   }
   const idSet = new Set(workers.map((w) => w.id));
@@ -102,10 +104,70 @@ export function validateFleetSpec(
     }
   }
 
+  let loopConfig: LoopConfig | undefined;
+  if (cfg.loop !== undefined && cfg.loop !== null) {
+    if (typeof cfg.loop !== "object" || Array.isArray(cfg.loop)) {
+      errors.push("config.loop must be an object");
+    } else {
+      const loop = cfg.loop as Record<string, unknown>;
+      const maxIterations = loop.max_iterations;
+      if (typeof maxIterations !== "number" || !Number.isInteger(maxIterations) || maxIterations < 1) {
+        errors.push("loop.max_iterations must be an integer >= 1");
+      }
+      const gate = loop.gate;
+      if (gate !== "reviewer" && gate !== "none") {
+        errors.push('loop.gate must be "reviewer" or "none"');
+      }
+      const lgtmCount = loop.lgtm_count;
+      const lgtmCountProvided = lgtmCount !== undefined;
+      if (lgtmCountProvided) {
+        if (typeof lgtmCount !== "number" || !Number.isInteger(lgtmCount) || lgtmCount < 1) {
+          errors.push("loop.lgtm_count must be an integer >= 1");
+        } else if (gate === "none") {
+          errors.push("loop.lgtm_count is not allowed with gate none");
+        }
+      }
+      if (gate === "reviewer" && typeof maxIterations === "number" && Number.isInteger(maxIterations) && maxIterations >= 1) {
+        const verdictNodes = workers.filter((w) => w.outputs.some((o) => o.kind === "verdict"));
+        if (verdictNodes.length !== 1) {
+          errors.push(`gate reviewer requires exactly one verdict-output node, found ${verdictNodes.length}`);
+        } else {
+          const verdictNode = verdictNodes[0];
+          if (verdictNode.iterate === false) {
+            errors.push(`verdict node "${verdictNode.id}" must have iterate enabled`);
+          } else {
+            const dependents = workers.filter((w) => w.depends_on.includes(verdictNode.id));
+            if (dependents.length > 0) {
+              errors.push(`verdict node "${verdictNode.id}" must be a sink, but is depended on by ${dependents.map((w) => w.id).join(", ")}`);
+            }
+          }
+        }
+      }
+      if (errors.length === 0) {
+        loopConfig = {
+          gate: gate as GateKind,
+          max_iterations: maxIterations as number,
+          lgtm_count: lgtmCountProvided ? (lgtmCount as number) : 1,
+        };
+      }
+
+      const byId = new Map(workers.map((w) => [w.id, w]));
+      for (const w of workers) {
+        if (w.iterate !== false) continue;
+        for (const d of w.depends_on) {
+          const dep = byId.get(d);
+          if (dep && dep.iterate !== false) {
+            errors.push(`run-once node "${w.id}" depends on replay node "${d}"`);
+          }
+        }
+      }
+    }
+  }
+
   const spec: FleetSpec = {
     fleet_name: String(r?.fleet_name ?? ""),
     type: "dag",
-    config: { max_concurrent: maxConcurrent, model, warn_cost_usd: warnCost },
+    config: { max_concurrent: maxConcurrent, model, warn_cost_usd: warnCost, loop: loopConfig },
     workers,
   };
 
