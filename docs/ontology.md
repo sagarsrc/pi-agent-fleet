@@ -28,8 +28,26 @@ Precise vocabulary for this project. Use these terms exactly — in code, commit
 
 | term | definition |
 |---|---|
-| **iteration** | one full DAG pass in an iterative (reviewer-gated) fleet |
 | **JIT node** | node appended to the DAG after launch |
+
+## Loop terms (v2)
+
+| term | definition |
+|---|---|
+| **iteration** | one full DAG pass in a loop fleet |
+| **loop** | `config.loop` block — turns one-shot DAG into gated replay |
+| **gate** | loop decision mechanism: `reviewer` \| `none` |
+| **lgtm streak** | consecutive `lgtm` verdicts; resets on `iterate`; loop stops at `lgtm_count` |
+| **replay node** | `iterate: true` (default) — fresh session each iteration |
+| **run-once node** | `iterate: false` — runs at iteration 1 only; outputs carry over |
+| **feedback injection** | prior-iteration review body appended to replay-node prompts |
+| **review history** | all prior verdicts+bodies injected into reviewer prompt |
+| **iteration boundary** | point between all-terminal DAG and next pass — only place gate/pause decisions happen |
+| **paused** | resumable non-terminal fleet status: `planned → running ⇄ paused → completed\|failed\|killed` |
+| **escalate** | verdict → auto-pause + operator notify |
+| **worktree directive** | prompt-injected instruction: node creates own worktree at designated path/branch |
+| **fleet branch** | `fleet/<fleet-ts>/<node-id>` naming convention |
+| **resolver node** | DAG node whose task is merging conflicting upstream worktrees (convention, not machinery) |
 
 ## Commit message ontology
 
