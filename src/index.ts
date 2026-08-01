@@ -18,6 +18,7 @@ export interface ActiveFleet {
   fleetRoot: string;
   state: FleetState;
   killSwitch: { killed: boolean };
+  pauseSwitch: { paused: boolean };
   running: boolean;
 }
 
@@ -153,6 +154,92 @@ async function dagPreview(spec: FleetSpec, state: FleetState | undefined, fleetR
   return out;
 }
 
+async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resume = false): Promise<void> {
+  fleet.running = true;
+  updateWidget(ctx, fleet);
+
+  const spawn = async (nodeId: string) => {
+    try {
+      const worker = fleet.spec.workers.find((w) => w.id === nodeId);
+      if (!worker) return { ok: false, turns: 0, tokens: 0, error: `unknown worker "${nodeId}"` };
+
+      let resolvedModel: Model<Api> | undefined;
+      let modelNote: string | undefined;
+      if (worker.model) {
+        const resolved = resolveModelReference(ctx.modelRegistry, worker.model);
+        if (!resolved.ok) return { ok: false, turns: 0, tokens: 0, error: resolved.error };
+        resolvedModel = resolved.model;
+      } else if (fleet.spec.config.model) {
+        const resolved = resolveModelReference(ctx.modelRegistry, fleet.spec.config.model);
+        if (resolved.ok) resolvedModel = resolved.model;
+        else modelNote = `config.model "${fleet.spec.config.model}" not found, using session default`;
+      }
+      if (modelNote) {
+        fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { status_note: modelNote });
+        updateWidget(ctx, fleet);
+      }
+
+      const prompt = await readFile(join(fleet.fleetRoot, "workers", nodeId, "prompt.md"), "utf-8");
+      const sessionDir = join(fleet.fleetRoot, "workers", nodeId);
+      return await runWorker({
+        nodeId,
+        worker: workerWithResolvedModel(worker, resolvedModel),
+        prompt,
+        repoCwd: ctx.cwd,
+        sessionDir,
+        sessionFactory: resolvedModel ? sessionFactoryForModel(resolvedModel) : undefined,
+        onEvent: (e) => {
+          if (e.type === "turn") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { turns: e.turns });
+          if (e.type === "tokens") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { tokens: e.tokens });
+          if (e.type === "error") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { status_note: e.message });
+          updateWidget(ctx, fleet);
+        },
+      });
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      return { ok: false, turns: 0, tokens: 0, error };
+    }
+  };
+
+  try {
+    const state = await runFleet({
+      spec: fleet.spec,
+      fleetRoot: fleet.fleetRoot,
+      repoCwd: (nodeId) => {
+        const worker = fleet.spec.workers.find((w) => w.id === nodeId);
+        return worker?.worktree ? join(fleet.fleetRoot, "worktrees", nodeId) : ctx.cwd;
+      },
+      spawn,
+      killSwitch: fleet.killSwitch,
+      pauseSwitch: fleet.pauseSwitch,
+      onNodeChange: (nodeId, nodeState) => {
+        fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, nodeState);
+        updateWidget(ctx, fleet);
+      },
+      prepareIteration: async (_n, state) => {
+        fleet.state = state;
+        await writeWorkerPrompts(fleet);
+      },
+      resumeFrom: resume ? await readState(fleet.fleetRoot) : undefined,
+    });
+    fleet.state = state;
+    fleet.running = false;
+    if (ctx.hasUI) ctx.ui.setWidget("fleet", []);
+    const report = await writeReport({ spec: fleet.spec, state, fleetRoot: fleet.fleetRoot, repoCwd: ctx.cwd });
+    const last = state.iterations[state.iterations.length - 1];
+    if (state.status === "paused" && last?.verdict === "escalate") {
+      if (ctx.hasUI) ctx.ui.notify("fleet paused: reviewer escalated", "warning");
+    } else if (ctx.hasUI) {
+      ctx.ui.notify(`fleet ${state.status}; report: ${join(fleet.fleetRoot, "report.md")}`, state.status === "completed" ? "info" : "warning");
+    }
+  } catch (err: unknown) {
+    fleet.running = false;
+    if (ctx.hasUI) ctx.ui.setWidget("fleet", []);
+    const error = err instanceof Error ? err.message : String(err);
+    if (ctx.hasUI) ctx.ui.notify(`fleet failed: ${error}`, "error");
+  }
+}
+
 async function killFleet(target: string): Promise<string> {
   if (!active) return "no fleet planned yet";
   if (target !== "all") return "single-node kill not supported in v1 — use target \"all\"";
@@ -184,6 +271,8 @@ export default function (pi: ExtensionAPI) {
     model: Type.Optional(Type.String({ description: "Per-worker model override, e.g. gpt-5.4-mini" })),
     depends_on: Type.Optional(Type.Array(Type.String())),
     outputs: Type.Optional(Type.Array(OutputSchema)),
+    iterate: Type.Optional(Type.Boolean({ description: "Replay node on each loop iteration" })),
+    worktree: Type.Optional(Type.Boolean({ description: "Run in a dedicated git worktree" })),
   });
   const FleetSchema = Type.Object({
     fleet_name: Type.String({ description: "kebab-case" }),
@@ -192,6 +281,11 @@ export default function (pi: ExtensionAPI) {
       max_concurrent: Type.Optional(Type.Number()),
       model: Type.Optional(Type.String({ description: "Fleet-wide default model" })),
       warn_cost_usd: Type.Optional(Type.Number()),
+      loop: Type.Optional(Type.Object({
+        gate: Type.Union([Type.Literal("reviewer"), Type.Literal("none")]),
+        max_iterations: Type.Number(),
+        lgtm_count: Type.Optional(Type.Number()),
+      })),
     })),
     workers: Type.Array(WorkerSchema, { minItems: 1 }),
   });
@@ -213,7 +307,7 @@ export default function (pi: ExtensionAPI) {
       const state = initFleetState(v.spec);
       await ensureFleetGitignore(ctx.cwd);
       await writePlanFiles(fleetRoot, v.spec, state);
-      active = { spec: v.spec, fleetRoot, state, killSwitch: { killed: false }, running: false };
+      active = { spec: v.spec, fleetRoot, state, killSwitch: { killed: false }, pauseSwitch: { paused: false }, running: false };
       updateWidget(ctx, active);
 
       const dag = await dagPreview(v.spec, undefined, fleetRoot);
@@ -240,78 +334,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       await writeWorkerPrompts(fleet);
-      fleet.running = true;
-      updateWidget(ctx, fleet);
-
-      const spawn = async (nodeId: string) => {
-        try {
-          const worker = fleet.spec.workers.find((w) => w.id === nodeId);
-          if (!worker) return { ok: false, turns: 0, tokens: 0, error: `unknown worker "${nodeId}"` };
-
-          let resolvedModel: Model<Api> | undefined;
-          let modelNote: string | undefined;
-          if (worker.model) {
-            // explicit per-worker model: hard error if unresolvable
-            const resolved = resolveModelReference(ctx.modelRegistry, worker.model);
-            if (!resolved.ok) return { ok: false, turns: 0, tokens: 0, error: resolved.error };
-            resolvedModel = resolved.model;
-          } else if (fleet.spec.config.model) {
-            // fleet default: warn + session default if unresolvable (fleet may be planned on another machine)
-            const resolved = resolveModelReference(ctx.modelRegistry, fleet.spec.config.model);
-            if (resolved.ok) resolvedModel = resolved.model;
-            else modelNote = `config.model "${fleet.spec.config.model}" not found, using session default`;
-          }
-          if (modelNote) {
-            fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { status_note: modelNote });
-            updateWidget(ctx, fleet);
-          }
-
-          const prompt = await readFile(join(fleet.fleetRoot, "workers", nodeId, "prompt.md"), "utf-8");
-          const sessionDir = join(fleet.fleetRoot, "workers", nodeId);
-          return await runWorker({
-            nodeId,
-            worker: workerWithResolvedModel(worker, resolvedModel),
-            prompt,
-            repoCwd: ctx.cwd,
-            sessionDir,
-            sessionFactory: resolvedModel ? sessionFactoryForModel(resolvedModel) : undefined,
-            onEvent: (e) => {
-              if (e.type === "turn") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { turns: e.turns });
-              if (e.type === "tokens") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { tokens: e.tokens });
-              if (e.type === "error") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { status_note: e.message });
-              updateWidget(ctx, fleet);
-            },
-          });
-        } catch (err) {
-          const error = err instanceof Error ? err.message : String(err);
-          return { ok: false, turns: 0, tokens: 0, error };
-        }
-      };
-
-      void runFleet({
-        spec: fleet.spec,
-        fleetRoot: fleet.fleetRoot,
-        repoCwd: ctx.cwd,
-        spawn,
-        killSwitch: fleet.killSwitch,
-        onNodeChange: (nodeId, nodeState) => {
-          fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, nodeState);
-          updateWidget(ctx, fleet);
-        },
-      }).then(async (state) => {
-        fleet.state = state;
-        fleet.running = false;
-        if (ctx.hasUI) ctx.ui.setWidget("fleet", []);
-        const report = await writeReport({ spec: fleet.spec, state, fleetRoot: fleet.fleetRoot, repoCwd: ctx.cwd });
-        if (ctx.hasUI) ctx.ui.notify(`fleet ${state.status}; report: ${join(fleet.fleetRoot, "report.md")}`, state.status === "completed" ? "info" : "warning");
-        return report;
-      }).catch((err: unknown) => {
-        fleet.running = false;
-        if (ctx.hasUI) ctx.ui.setWidget("fleet", []);
-        const error = err instanceof Error ? err.message : String(err);
-        if (ctx.hasUI) ctx.ui.notify(`fleet failed: ${error}`, "error");
-      });
-
+      void startLoop(fleet, ctx, false);
       return textResult("fleet launched");
     },
   });
@@ -340,6 +363,39 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
+    name: "fleet_pause",
+    label: "Fleet Pause",
+    description: "Request a pause of the active running loop fleet. The pause takes effect at the next iteration boundary.",
+    promptSnippet: "Pause the active fleet at the next iteration boundary.",
+    parameters: Type.Object({}),
+    async execute(_id, _params, _signal, _onUpdate, ctx) {
+      if (!active) return textResult("no fleet planned yet");
+      if (!active.running) return textResult("fleet not running");
+      active.pauseSwitch.paused = true;
+      active.state = { ...active.state, paused: true };
+      await writeState(active.fleetRoot, active.state);
+      updateWidget(ctx, active);
+      return textResult("pause requested (takes effect at next iteration boundary)");
+    },
+  });
+
+  pi.registerTool({
+    name: "fleet_resume",
+    label: "Fleet Resume",
+    description: "Resume a paused loop fleet from the current iteration.",
+    promptSnippet: "Resume the paused active fleet.",
+    parameters: Type.Object({}),
+    async execute(_id, _params, _signal, _onUpdate, ctx) {
+      if (!active) return textResult("no fleet planned yet");
+      if (active.state.status !== "paused") return textResult("fleet is not paused");
+      if (active.running) return textResult("fleet already running");
+      active.pauseSwitch.paused = false;
+      void startLoop(active, ctx, true);
+      return textResult("fleet resumed");
+    },
+  });
+
+  pi.registerTool({
     name: "fleet_report",
     label: "Fleet Report",
     description: "Regenerate and return the active fleet markdown report from current state.",
@@ -354,7 +410,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("fleet", {
-    description: "Fleet commands: /fleet viz, /fleet status, /fleet clear, /fleet kill all",
+    description: "Fleet commands: /fleet viz, /fleet status, /fleet clear, /fleet kill all, /fleet pause, /fleet resume",
     handler: async (args, ctx) => {
       const [cmd, target] = args.trim().split(/\s+/);
       if (!active) {
@@ -379,7 +435,33 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify(text, text === "fleet kill requested" ? "warning" : "error");
         return;
       }
-      ctx.ui.notify("usage: /fleet viz | /fleet status | /fleet clear | /fleet kill all", "warning");
+      if (cmd === "pause") {
+        if (!active.running) {
+          ctx.ui.notify("fleet not running", "warning");
+          return;
+        }
+        active.pauseSwitch.paused = true;
+        active.state = { ...active.state, paused: true };
+        await writeState(active.fleetRoot, active.state);
+        updateWidget(ctx, active);
+        ctx.ui.notify("pause requested (takes effect at next iteration boundary)", "warning");
+        return;
+      }
+      if (cmd === "resume") {
+        if (active.state.status !== "paused") {
+          ctx.ui.notify("fleet is not paused", "warning");
+          return;
+        }
+        if (active.running) {
+          ctx.ui.notify("fleet already running", "warning");
+          return;
+        }
+        active.pauseSwitch.paused = false;
+        void startLoop(active, ctx, true);
+        ctx.ui.notify("fleet resumed", "info");
+        return;
+      }
+      ctx.ui.notify("usage: /fleet viz | /fleet status | /fleet clear | /fleet kill all | /fleet pause | /fleet resume", "warning");
     },
   });
 }
