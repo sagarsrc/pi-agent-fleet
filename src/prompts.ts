@@ -1,3 +1,4 @@
+import { basename } from "node:path";
 import { getDependents } from "./dag.js";
 import type { FleetSpec, FleetState } from "./types.js";
 import { renderDag } from "./viz.js";
@@ -16,7 +17,28 @@ export function buildWorkerPrompt(opts: {
   const dependents = getDependents(spec, workerId);
   const out: string[] = [];
 
+  const fleetTs = basename(fleetRoot);
+
   out.push(`# Fleet worker: ${workerId}`, "", `Type: ${worker.type}`, "", `## Task`, "", worker.task, "");
+
+  if (state.iteration > 1 && worker.iterate !== false) {
+    const last = state.iterations[state.iterations.length - 1];
+    if (last?.verdict_body) {
+      out.push(`## Reviewer feedback (iteration ${state.iteration - 1})`, "", last.verdict_body, "");
+    }
+  }
+
+  if (worker.outputs.some((o) => o.kind === "verdict") && state.iterations.length > 0) {
+    const reviews = state.iterations.filter((s) => s.verdict !== null);
+    if (reviews.length > 0) {
+      out.push("## Previous reviews", "");
+      for (const s of reviews) {
+        out.push(`### Iteration ${s.n} — verdict: ${s.verdict}`);
+        if (s.verdict_body) out.push(s.verdict_body);
+        out.push("");
+      }
+    }
+  }
 
   out.push("## The fleet DAG", "", "```", renderDag(spec), "```", "");
   for (const w of spec.workers) {
@@ -29,6 +51,10 @@ export function buildWorkerPrompt(opts: {
     out.push("No upstream dependencies — you are a layer-0 node.", "");
   } else {
     for (const d of deps) {
+      if (d.worktree === true) {
+        out.push(`- ${d.id} worktree: ${fleetRoot}/worktrees/${d.id} (branch fleet/${fleetTs}/${d.id})`);
+        out.push("  — merge or cherry-pick from here if you need its repo changes");
+      }
       if (d.outputs.length === 0) out.push(`- ${d.id}: (no declared outputs — read its session notes in ${fleetRoot}/workers/${d.id}/output/ if present)`);
       for (const o of d.outputs) {
         const abs = o.path.startsWith("output/")
@@ -63,5 +89,15 @@ export function buildWorkerPrompt(opts: {
   if (worker.outputs.some((o) => !o.path.startsWith("output/"))) {
     out.push("Write code changes directly at their repo paths.", "");
   }
+  if (worker.worktree === true) {
+    out.push("## Your worktree", "");
+    out.push("Work inside your own git worktree, not the main checkout.");
+    out.push("If it does not exist yet, create it:");
+    out.push(`  git worktree add ${fleetRoot}/worktrees/${workerId} -b fleet/${fleetTs}/${workerId}`);
+    out.push("If it already exists (iteration > 1), reuse it and your existing branch.");
+    out.push("Make ALL repo changes inside the worktree. Commit your work there.");
+    out.push("");
+  }
+
   return out.join("\n");
 }
