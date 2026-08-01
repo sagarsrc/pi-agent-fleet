@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -234,5 +234,39 @@ describe("runFleet loop", () => {
     expect(snaps).toHaveLength(2);
     expect(snaps[0].n).toBe(1);
     expect(snaps[1].n).toBe(2);
+  });
+
+  it("resumeFrom after escalate continues with monotonic snapshots and no archive collisions", async () => {
+    const spec = baseSpec({
+      config: { max_concurrent: 1, model: "k2p6", loop: { gate: "reviewer", max_iterations: 4, lgtm_count: 2 } },
+    });
+    const fleetRoot = await makeRoot(spec);
+
+    const first = await runFleet({
+      spec,
+      fleetRoot,
+      repoCwd: "/tmp",
+      spawn: makeSpawn(fleetRoot, ["iterate", "escalate"]),
+    });
+    expect(first.status).toBe("paused");
+    expect(first.paused).toBe(true);
+    expect(first.iterations.map((it) => it.n)).toEqual([1, 2]);
+
+    const final = await runFleet({
+      spec,
+      fleetRoot,
+      repoCwd: "/tmp",
+      spawn: makeSpawn(fleetRoot, ["lgtm", "lgtm"]),
+      resumeFrom: first,
+    });
+
+    expect(final.status).toBe("completed");
+    expect(final.lgtm_streak).toBe(2);
+    expect(final.iterations.map((it) => it.n)).toEqual([1, 2, 3, 4]);
+    expect(final.iterations.length).toBe(new Set(final.iterations.map((it) => it.n)).size);
+
+    for (const it of final.iterations) {
+      await stat(join(fleetRoot, "iterations", String(it.n), "workers", "b", "output", "b.md"));
+    }
   });
 });

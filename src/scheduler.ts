@@ -33,8 +33,7 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
     state = { ...opts.resumeFrom, paused: false, status: "running" };
     await writeState(fleetRoot, state);
     if (allNodesTerminal(state, spec)) {
-      const currentIteration = state.iteration;
-      state = { ...resetForIteration(state, spec), iteration: currentIteration };
+      state = resetForIteration(state, spec);
       await writeState(fleetRoot, state);
     }
   } else {
@@ -184,10 +183,12 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
           return state;
         }
         state = { ...state, lgtm_streak: streak };
+        await writeState(fleetRoot, state);
         continue;
       }
       if (v === "iterate") {
         state = { ...state, lgtm_streak: 0 };
+        await writeState(fleetRoot, state);
         continue;
       }
       if (v === "escalate") {
