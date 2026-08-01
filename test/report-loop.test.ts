@@ -60,7 +60,48 @@ describe("writeReport loop", () => {
     expect(md).toContain("expand the section on auth");
   });
 
-  it("report lists worktree branches when present", async () => {
+  it("report includes per-iteration per-node detail", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fleet-report-loop-"));
+    const md = await writeReport({ spec: loopSpec, state: loopState(), fleetRoot: root, repoCwd: "/nonexistent" });
+    expect(md).toContain("### Iteration 1");
+    expect(md).toContain("- a: completed · 1 turns · 120 tok");
+    expect(md).toContain("- rev: completed · 1 turns · 80 tok");
+  });
+
+  it("report lists worktree branches for one-shot fleets", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fleet-report-worktree-oneshot-"));
+    const spec: FleetSpec = {
+      fleet_name: "oneshot",
+      type: "dag",
+      config: { max_concurrent: 1, model: "k2p6" },
+      workers: [
+        { id: "builder-a", type: "code-run", task: "t", depends_on: [], outputs: [], worktree: true },
+      ],
+    };
+    const nodeBase: NodeState = {
+      status: "completed",
+      turns: 1,
+      tokens: 100,
+      cost_usd_estimate: 0.1,
+      produced_outputs: [],
+    };
+    const state: FleetState = {
+      ...initFleetState(spec),
+      status: "completed",
+      iteration: 1,
+      lgtm_streak: 0,
+      cost_usd_estimate: 0.1,
+      iterations: [],
+      nodes: { "builder-a": { ...nodeBase } },
+    };
+    const md = await writeReport({ spec, state, fleetRoot: root, repoCwd: "/nonexistent" });
+    const base = root.split("/").pop()!;
+    expect(md).not.toContain("## Iterations");
+    expect(md).toContain("## Worktree branches");
+    expect(md).toContain(`fleet/${base}/builder-a`);
+  });
+
+  it("report lists worktree branches for loop fleets", async () => {
     const root = await mkdtemp(join(tmpdir(), "fleet-report-worktree-"));
     const spec: FleetSpec = {
       ...loopSpec,

@@ -88,6 +88,29 @@ describe("buildWorkerPrompt loop extensions", () => {
     expect(p).toContain("Make ALL repo changes inside the worktree.");
   });
 
+  it("verdict-output worker gets verdict format instruction", () => {
+    const spec = baseSpec([
+      { id: "reviewer", type: "reviewer", task: "Review", depends_on: ["build"], outputs: [{ path: "output/verdict.md", kind: "verdict", required: true }] },
+      { id: "build", type: "code-run", task: "Build", depends_on: [], outputs: [{ path: "src/x.ts", kind: "file-exists", required: true }] },
+    ]);
+    const state = initFleetState(spec);
+    const p = buildWorkerPrompt({ spec, state, workerId: "reviewer", fleetRoot: "/f" });
+    expect(p).toContain("## Writing your verdict");
+    expect(p).toContain("verdict: lgtm");
+    expect(p.indexOf("## Writing your verdict")).toBeLessThan(p.indexOf("## Your output obligations"));
+  });
+
+  it("non-verdict worker does not get verdict format instruction", () => {
+    const spec = baseSpec([
+      { id: "reviewer", type: "reviewer", task: "Review", depends_on: ["build"], outputs: [{ path: "output/verdict.md", kind: "verdict", required: true }] },
+      { id: "build", type: "code-run", task: "Build", depends_on: [], outputs: [{ path: "src/x.ts", kind: "file-exists", required: true }] },
+    ]);
+    const state = initFleetState(spec);
+    const p = buildWorkerPrompt({ spec, state, workerId: "build", fleetRoot: "/f" });
+    expect(p).not.toContain("## Writing your verdict");
+    expect(p).not.toContain("verdict: lgtm");
+  });
+
   it("downstream of worktree dep sees worktree line", () => {
     const spec = baseSpec([
       { id: "wt", type: "code-run", task: "Work", depends_on: [], outputs: [{ path: "src/x.ts", kind: "file-exists", required: true }], worktree: true },

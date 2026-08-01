@@ -74,6 +74,19 @@ export function buildWorkerPrompt(opts: {
     out.push("");
   }
 
+  if (worker.outputs.some((o) => o.kind === "verdict")) {
+    out.push(
+      "## Writing your verdict",
+      "",
+      "Your review file MUST start with a verdict line, exactly one of:",
+      "  verdict: lgtm",
+      "  verdict: iterate",
+      "  verdict: escalate",
+      "Below the verdict line, write actionable fix instructions per worker — file path, function name, what to change. A verdict line with no body FAILS the contract. The builders see this body as feedback next iteration, so be specific.",
+      "",
+    );
+  }
+
   out.push("## Your output obligations", "");
   if (worker.outputs.length === 0) {
     out.push("No declared outputs — completion is enough.", "");

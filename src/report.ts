@@ -59,13 +59,17 @@ export async function writeReport(opts: {
       lines.push("", `### Iteration ${it.n}`, "");
       lines.push(`- verdict: ${it.verdict ?? "—"}`);
       if (it.verdict_body) lines.push("", it.verdict_body);
-    }
-    if (spec.workers.some((w) => w.worktree)) {
-      lines.push("", "## Worktree branches", "");
-      const base = basename(fleetRoot);
       for (const w of spec.workers) {
-        if (w.worktree) lines.push(`- fleet/${base}/${w.id}`);
+        const n = it.nodes[w.id];
+        if (n) lines.push(`- ${w.id}: ${n.status} · ${n.turns} turns · ${n.tokens} tok`);
       }
+    }
+  }
+  if (spec.workers.some((w) => w.worktree)) {
+    lines.push("", "## Worktree branches", "");
+    const base = basename(fleetRoot);
+    for (const w of spec.workers) {
+      if (w.worktree) lines.push(`- fleet/${base}/${w.id}`);
     }
   }
   lines.push("", "## Code changes", "", "```", await gitDiffStat(repoCwd, state.created_at), "```", "");
