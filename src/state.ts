@@ -13,6 +13,10 @@ export function initFleetState(spec: FleetSpec): FleetState {
     created_at: new Date().toISOString(),
     cost_usd_estimate: 0,
     nodes,
+    iteration: 1,
+    lgtm_streak: 0,
+    paused: false,
+    iterations: [],
   };
 }
 
