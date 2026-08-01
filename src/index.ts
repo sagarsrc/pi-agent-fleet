@@ -1,5 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { createAgentSession, SessionManager, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
@@ -31,6 +31,22 @@ function fleetRootFor(cwd: string, name: string): string {
 
 function textResult(text: string, details: Record<string, unknown> = {}) {
   return { content: [{ type: "text" as const, text }], details };
+}
+
+async function isInsideGitRepo(cwd: string): Promise<boolean> {
+  let dir = cwd;
+  while (true) {
+    try {
+      const s = await stat(join(dir, ".git"));
+      if (s.isFile() || s.isDirectory()) return true;
+    } catch (e: unknown) {
+      const err = e as { code?: string };
+      if (err.code !== "ENOENT") throw e;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return false;
+    dir = parent;
+  }
 }
 
 async function ensureFleetGitignore(cwd: string): Promise<void> {
@@ -327,6 +343,12 @@ export default function (pi: ExtensionAPI) {
       if (!active) return textResult("no fleet planned yet");
       if (active.running) return textResult("fleet already running");
       const fleet = active;
+
+      if (fleet.spec.workers.some((w) => w.worktree === true)) {
+        if (!(await isInsideGitRepo(ctx.cwd))) {
+          return textResult(`worktree workers require a git repo; none found above ${ctx.cwd}`);
+        }
+      }
 
       if (ctx.hasUI && !params.skip_confirm) {
         const ok = await ctx.ui.confirm("Launch fleet?", renderDag(fleet.spec));
