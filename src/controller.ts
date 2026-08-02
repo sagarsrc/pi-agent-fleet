@@ -28,8 +28,19 @@ export interface ActiveFleetCell {
 
 export const activeFleet: ActiveFleetCell = { current: undefined };
 
-export function updateWidget(ctx: ExtensionContext, fleet: ActiveFleet): void {
-  if (ctx.hasUI) ctx.ui.setWidget("fleet", buildWidgetLines(fleet.spec, fleet.state));
+export function updateWidget(ctx: ExtensionContext, fleet: ActiveFleet, spinnerFrame?: number): void {
+  if (ctx.hasUI) ctx.ui.setWidget("fleet", buildWidgetLines(fleet.spec, fleet.state, { spinnerFrame }));
+}
+
+export function startSpinner(ctx: ExtensionContext, fleet: ActiveFleet, intervalMs = 150): () => void {
+  if (!ctx.hasUI) return () => {};
+  let frame = 0;
+  const timer = setInterval(() => {
+    frame++;
+    updateWidget(ctx, fleet, frame);
+  }, intervalMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return () => clearInterval(timer);
 }
 
 export async function currentState(fleet: ActiveFleet): Promise<FleetState> {
@@ -62,6 +73,7 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
   fleet.running = true;
   fleet.costWarned = false;
   updateWidget(ctx, fleet);
+  const stopSpinner = startSpinner(ctx, fleet);
 
   const checkCostWarning = () => {
     const warn = fleet.spec.config.warn_cost_usd;
@@ -154,7 +166,8 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
     });
     fleet.state = state;
     fleet.running = false;
-    if (ctx.hasUI) ctx.ui.setWidget("fleet", []);
+    stopSpinner();
+    updateWidget(ctx, fleet); // keep final per-node stats visible (todo #12)
     const report = await writeReport({ spec: fleet.spec, state, fleetRoot: fleet.fleetRoot, repoCwd: ctx.cwd });
     const last = state.iterations[state.iterations.length - 1];
     if (state.status === "paused" && last?.verdict === "escalate") {
@@ -164,7 +177,8 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
     }
   } catch (err: unknown) {
     fleet.running = false;
-    if (ctx.hasUI) ctx.ui.setWidget("fleet", []);
+    stopSpinner();
+    updateWidget(ctx, fleet);
     const error = err instanceof Error ? err.message : String(err);
     if (ctx.hasUI) ctx.ui.notify(`fleet failed: ${error}`, "error");
   }
