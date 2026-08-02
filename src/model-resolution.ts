@@ -1,4 +1,5 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
+import type { FleetSpec } from "./types.js";
 
 export interface ModelRegistryLike {
   getAvailable(): Model<Api>[];
@@ -48,4 +49,25 @@ export function resolveModelReference(
     }
   }
   return { ok: false, error: `model "${ref}" not found` };
+}
+
+export function validateFleetModels(
+  spec: FleetSpec,
+  registry: ModelRegistryLike,
+): { ok: true } | { ok: false; errors: string[] } {
+  const errors: string[] = [];
+  const refs: Array<{ label: string; ref: string }> = [];
+  if (spec.config.model) refs.push({ label: "config.model", ref: spec.config.model });
+  for (const w of spec.workers) {
+    if (w.model) refs.push({ label: `worker "${w.id}" model`, ref: w.model });
+  }
+  const seen = new Set<string>();
+  for (const { label, ref } of refs) {
+    const key = `${label}\0${ref}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const r = resolveModelReference(registry, ref);
+    if (!r.ok) errors.push(`${label}: ${r.error}`);
+  }
+  return errors.length > 0 ? { ok: false, errors } : { ok: true };
 }

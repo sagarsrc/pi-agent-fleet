@@ -60,13 +60,20 @@ export interface RunWorkerResult {
 
 export async function runWorker(opts: RunWorkerOpts): Promise<RunWorkerResult> {
   const factory = opts.sessionFactory ?? defaultSessionFactory;
-  const session = await factory({
-    cwd: opts.repoCwd,
-    sessionDir: opts.sessionDir ?? opts.repoCwd,
-    tools: WORKER_TYPE_TOOLS[opts.worker.type],
-    model: opts.worker.model,
-    thinkingLevel: opts.thinkingLevel,
-  });
+  let session: AgentSessionLike;
+  try {
+    session = await factory({
+      cwd: opts.repoCwd,
+      sessionDir: opts.sessionDir ?? opts.repoCwd,
+      tools: WORKER_TYPE_TOOLS[opts.worker.type],
+      model: opts.worker.model,
+      thinkingLevel: opts.thinkingLevel,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    opts.onEvent({ type: "error", nodeId: opts.nodeId, message });
+    return { ok: false, turns: 0, tokens: 0, cost: 0, error: message };
+  }
   let turns = 0;
   let tokens = 0;
   let cost = 0;

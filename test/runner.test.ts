@@ -61,4 +61,19 @@ describe("runWorker", () => {
     });
     expect(seen).toBe("high");
   });
+
+  it("session factory throw becomes a per-node failure", async () => {
+    const res = await runWorker({
+      nodeId: "a",
+      worker: { id: "a", type: "research", task: "t", depends_on: [], outputs: [] },
+      prompt: "p",
+      repoCwd: "/tmp",
+      sessionFactory: async () => {
+        throw new Error("model exploded");
+      },
+      onEvent: () => {},
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("model exploded");
+  });
 });

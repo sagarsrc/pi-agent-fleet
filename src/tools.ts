@@ -5,7 +5,7 @@ import { Type } from "typebox";
 import { validateFleetSpec } from "./dag.js";
 import { activeFleet, currentState, dagPreview, killFleet, startLoop, statusText, updateWidget } from "./controller.js";
 import { ensureFleetGitignore, fleetRootFor, isInsideGitRepo, writePlanFiles, writeWorkerPrompts } from "./fleet-store.js";
-import { resolveModelReference } from "./model-resolution.js";
+import { resolveModelReference, validateFleetModels } from "./model-resolution.js";
 import { writeReport } from "./report.js";
 import { initFleetState, resetForRelaunch, writeState } from "./state.js";
 import { buildWidgetLines } from "./ui.js";
@@ -72,6 +72,9 @@ export function registerFleetTools(pi: ExtensionAPI): void {
       const v = validateFleetSpec(params.fleet);
       if (!v.ok) return textResult(`Invalid fleet:\n${v.errors.join("\n")}`);
 
+      const modelCheck = validateFleetModels(v.spec, ctx.modelRegistry);
+      if (!modelCheck.ok) return textResult(`Invalid fleet:\n${modelCheck.errors.join("\n")}`);
+
       const fleetRoot = fleetRootFor(ctx.cwd, v.spec.fleet_name);
       const state = initFleetState(v.spec);
       await ensureFleetGitignore(ctx.cwd);
@@ -97,6 +100,11 @@ export function registerFleetTools(pi: ExtensionAPI): void {
       if (!active) return textResult("no fleet planned yet");
       if (active.running) return textResult("fleet already running");
       const fleet = active;
+
+      const modelCheck = validateFleetModels(fleet.spec, ctx.modelRegistry);
+      if (!modelCheck.ok) {
+        return textResult(`Cannot launch — unresolvable models:\n${modelCheck.errors.join("\n")}`);
+      }
 
       if (fleet.spec.workers.some((w) => w.worktree === true)) {
         if (!(await isInsideGitRepo(ctx.cwd))) {
