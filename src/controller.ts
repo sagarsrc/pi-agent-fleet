@@ -13,7 +13,7 @@ import type { FleetSpec, FleetState } from "./types.js";
 import { TERMINAL_NODE_STATUSES } from "./types.js";
 import { buildWidgetLines } from "./ui.js";
 import { dagNeedsFileFallback, renderDag } from "./viz.js";
-import { openInBrowser, startCanvasServer, type CanvasServer } from "./canvas.js";
+import { startCanvasServer, type CanvasServer } from "./canvas.js";
 
 export interface ActiveFleet {
   spec: FleetSpec;
@@ -281,16 +281,15 @@ export async function killFleet(target: string): Promise<string> {
   return `node "${target}" kill requested`;
 }
 
-let canvas: CanvasServer | undefined;
+let canvas: Promise<CanvasServer> | undefined;
 
 export async function ensureCanvas(): Promise<CanvasServer> {
-  canvas ??= await startCanvasServer({ getFleet: () => activeFleet.current });
+  canvas ??= startCanvasServer({ getFleet: () => activeFleet.current });
   return canvas;
 }
 
 export async function stopCanvas(): Promise<void> {
-  if (canvas) {
-    await canvas.close();
-    canvas = undefined;
-  }
+  const current = canvas;
+  canvas = undefined;
+  if (current) (await current).close();
 }

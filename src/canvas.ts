@@ -150,7 +150,7 @@ main { display:flex; height:calc(100vh - 45px); }
 <script>
 var selected = null;
 function j(u){ return fetch(u).then(function(r){ return r.json(); }); }
-function esc(s){ return String(s).replace(/[&<>]/g, function(c){ return { "&":"&amp;", "<":"&lt;", ">":"&gt;" }[c]; }); }
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]; }); }
 function layers(nodes, edges){
   var ids = nodes.map(function(n){ return n.id; });
   var indeg = {}; var rev = {};
@@ -180,10 +180,12 @@ function tick(){
     var done = s.nodes.filter(function(n){ return n.status==="completed"; }).length;
     hdr.innerHTML = '<span class="name">● ' + esc(s.fleet_name) + '</span>'
       + '<span class="pill">' + esc(s.status) + '</span>'
+      + (s.paused ? '<span class="pill">paused</span>' : '')
       + '<span>' + done + '/' + s.nodes.length + ' done</span>'
       + '<span>$' + s.cost_usd_estimate.toFixed(2) + '</span>'
       + '<span class="meta">' + esc(loop) + '</span>';
     var L = layers(s.nodes, s.edges);
+    var st = dag.scrollTop;
     dag.innerHTML = L.map(function(layer){
       return '<div class="layer">' + layer.map(function(id){
         var n = s.nodes.filter(function(x){ return x.id===id; })[0];
@@ -195,16 +197,19 @@ function tick(){
           + '</div>';
       }).join("") + '</div>';
     }).join("");
-  }).catch(function(){});
+    dag.scrollTop = st;
+  }).catch(function(){ var hdr = document.getElementById("hdr"); hdr.innerHTML = '<span class="pill">connection lost</span>'; });
 }
 function side(){
   if(!selected) return;
   j("/api/session/" + selected + "?tail=30").then(function(r){
     var el = document.getElementById("side");
+    var sst = el.scrollTop;
     el.innerHTML = '<div class="meta"># ' + esc(selected) + ' - recent session</div>'
       + r.entries.map(function(e){
           return '<div class="msg"><div class="role role-' + esc(e.role) + '">' + esc(e.role) + '</div>' + esc(e.text) + '</div>';
         }).join("");
+    el.scrollTop = sst;
   }).catch(function(){});
 }
 function sel(id){
@@ -281,7 +286,10 @@ export async function startCanvasServer(opts: {
   return {
     port: addr.port,
     url: `http://${host}:${addr.port}`,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    close: () => new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      server.closeIdleConnections?.();
+    }),
   };
 }
 
