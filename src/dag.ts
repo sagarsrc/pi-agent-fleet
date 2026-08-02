@@ -1,4 +1,4 @@
-import type { FleetSpec, GateKind, LoopConfig, OutputKind, WorkerSpec, WorkerType } from "./types.js";
+import type { FleetSpec, GateKind, LoopConfig, OutputKind, ThinkingLevelName, WorkerSpec, WorkerType } from "./types.js";
 
 export class CycleError extends Error {
   constructor(public remaining: string[]) {
@@ -9,6 +9,7 @@ export class CycleError extends Error {
 
 const WORKER_TYPES: WorkerType[] = ["research", "code-run", "reviewer", "write", "read-only"];
 const KINDS: OutputKind[] = ["markdown", "file-exists", "verdict", "json", "yaml"];
+const EFFORTS: ThinkingLevelName[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const ID_RE = /^[a-z0-9][a-z0-9-]*$/;
 
 export function topoLayers(spec: FleetSpec): string[][] {
@@ -60,6 +61,10 @@ export function validateFleetSpec(
   const maxConcurrent = typeof cfg.max_concurrent === "number" ? cfg.max_concurrent : 4;
   if (maxConcurrent < 1) errors.push("config.max_concurrent must be >= 1");
   const model = typeof cfg.model === "string" ? cfg.model : "gpt-5.4";
+  const effort = typeof cfg.effort === "string" ? cfg.effort as ThinkingLevelName : undefined;
+  if (effort !== undefined && !EFFORTS.includes(effort)) {
+    errors.push(`config.effort must be one of ${EFFORTS.join(", ")}`);
+  }
   const warnCost = typeof cfg.warn_cost_usd === "number" ? cfg.warn_cost_usd : undefined;
 
   const rawWorkers = Array.isArray(r?.workers) ? (r.workers as Record<string, unknown>[]) : [];
@@ -86,11 +91,16 @@ export function validateFleetSpec(
         }
       }
     }
+    const wEffort = typeof w.effort === "string" ? w.effort as ThinkingLevelName : undefined;
+    if (wEffort !== undefined && !EFFORTS.includes(wEffort)) {
+      errors.push(`worker "${id}": bad effort "${String(w.effort)}"`);
+    }
     workers.push({
       id,
       type,
       task: String(w.task ?? ""),
       model: typeof w.model === "string" ? w.model : undefined,
+      effort: wEffort,
       depends_on: Array.isArray(w.depends_on) ? (w.depends_on as string[]) : [],
       outputs: outputs.map((o) => ({ path: String(o.path), kind: o.kind as OutputKind, required: o.required !== false })),
       iterate: w.iterate !== false,
@@ -172,7 +182,7 @@ export function validateFleetSpec(
   const spec: FleetSpec = {
     fleet_name: String(r?.fleet_name ?? ""),
     type: "dag",
-    config: { max_concurrent: maxConcurrent, model, warn_cost_usd: warnCost, loop: loopConfig },
+    config: { max_concurrent: maxConcurrent, model, effort, warn_cost_usd: warnCost, loop: loopConfig },
     workers,
   };
 

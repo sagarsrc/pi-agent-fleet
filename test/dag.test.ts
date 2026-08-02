@@ -67,6 +67,40 @@ describe("validateFleetSpec", () => {
   });
 });
 
+describe("effort validation", () => {
+  it("accepts config.effort and worker effort", () => {
+    const r = validateFleetSpec({
+      fleet_name: "t", type: "dag",
+      config: { effort: "high" },
+      workers: [{ id: "a", type: "research", task: "t", effort: "low" }],
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.spec.config.effort).toBe("high");
+      expect(r.spec.workers[0].effort).toBe("low");
+    }
+  });
+
+  it("rejects bad config.effort", () => {
+    const r = validateFleetSpec({
+      fleet_name: "t", type: "dag",
+      config: { effort: "ludicrous" },
+      workers: [{ id: "a", type: "research", task: "t" }],
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.join("\n")).toContain("config.effort");
+  });
+
+  it("rejects bad worker effort", () => {
+    const r = validateFleetSpec({
+      fleet_name: "t", type: "dag",
+      workers: [{ id: "a", type: "research", task: "t", effort: "maxed" }],
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.join("\n")).toContain('worker "a": bad effort');
+  });
+});
+
 describe("getDependents", () => {
   it("returns direct dependents", () => {
     const r = validateFleetSpec(base);
@@ -75,3 +109,4 @@ describe("getDependents", () => {
     expect(getDependents(r.spec, "d")).toEqual([]);
   });
 });
+

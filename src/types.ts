@@ -11,6 +11,8 @@ export type WorkerType = "research" | "code-run" | "reviewer" | "write" | "read-
 export type GateKind = "reviewer" | "none";
 export type Verdict = "lgtm" | "iterate" | "escalate";
 
+export type ThinkingLevelName = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
 export interface LoopConfig {
   gate: GateKind;
   max_iterations: number;
@@ -22,6 +24,7 @@ export interface WorkerSpec {
   type: WorkerType;
   task: string;
   model?: string;
+  effort?: ThinkingLevelName;
   depends_on: string[];
   outputs: ContractOutput[];
   iterate?: boolean;
@@ -31,6 +34,7 @@ export interface WorkerSpec {
 export interface FleetConfig {
   max_concurrent: number;
   model: string;
+  effort?: ThinkingLevelName;
   warn_cost_usd?: number;
   loop?: LoopConfig;
 }

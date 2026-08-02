@@ -40,4 +40,25 @@ describe("runWorker", () => {
     expect(r.ok).toBe(false);
     expect(r.error).toBe("boom");
   });
+  it("forwards thinkingLevel to the session factory", async () => {
+    let seen: string | undefined;
+    await runWorker({
+      nodeId: "a",
+      worker: { id: "a", type: "research", task: "t", depends_on: [], outputs: [] },
+      prompt: "p",
+      repoCwd: "/tmp",
+      thinkingLevel: "high",
+      sessionFactory: async (opts) => {
+        seen = opts.thinkingLevel;
+        return {
+          prompt: async () => {},
+          abort: async () => {},
+          subscribe: () => () => {},
+          dispose: () => {},
+        };
+      },
+      onEvent: () => {},
+    });
+    expect(seen).toBe("high");
+  });
 });

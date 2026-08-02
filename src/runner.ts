@@ -1,7 +1,9 @@
-import { createAgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, SessionManager, type CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { WorkerSpec } from "./types.js";
+import type { ThinkingLevelName, WorkerSpec } from "./types.js";
 import { WORKER_TYPE_TOOLS } from "./types.js";
+
+export type ThinkingLevelOption = NonNullable<CreateAgentSessionOptions["thinkingLevel"]>;
 
 export type WorkerEvent =
   | { type: "turn"; nodeId: string; turns: number }
@@ -22,6 +24,7 @@ export interface SessionOpts {
   sessionDir: string;
   tools: string[];
   model?: string;
+  thinkingLevel?: ThinkingLevelName;
 }
 
 export type SessionFactory = (opts: SessionOpts) => Promise<AgentSessionLike>;
@@ -31,6 +34,7 @@ export const defaultSessionFactory: SessionFactory = async (opts) => {
     cwd: opts.cwd,
     tools: opts.tools,
     sessionManager: SessionManager.create(opts.cwd, opts.sessionDir),
+    thinkingLevel: opts.thinkingLevel as ThinkingLevelOption,
   });
   return session as unknown as AgentSessionLike;
 };
@@ -43,6 +47,7 @@ export interface RunWorkerOpts {
   sessionDir?: string;
   onEvent: (e: WorkerEvent) => void;
   sessionFactory?: SessionFactory;
+  thinkingLevel?: ThinkingLevelName;
 }
 
 export interface RunWorkerResult {
@@ -60,6 +65,7 @@ export async function runWorker(opts: RunWorkerOpts): Promise<RunWorkerResult> {
     sessionDir: opts.sessionDir ?? opts.repoCwd,
     tools: WORKER_TYPE_TOOLS[opts.worker.type],
     model: opts.worker.model,
+    thinkingLevel: opts.thinkingLevel,
   });
   let turns = 0;
   let tokens = 0;
@@ -102,6 +108,7 @@ export function sessionFactoryForModel(model: Model<Api>): SessionFactory {
       tools: opts.tools,
       sessionManager: SessionManager.create(opts.cwd, opts.sessionDir),
       model,
+      thinkingLevel: opts.thinkingLevel as ThinkingLevelOption,
     });
     return session as unknown as AgentSessionLike;
   };

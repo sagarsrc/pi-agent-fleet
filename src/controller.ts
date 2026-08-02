@@ -96,12 +96,14 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
 
       const prompt = await readFile(join(fleet.fleetRoot, "workers", nodeId, "prompt.md"), "utf-8");
       const sessionDir = join(fleet.fleetRoot, "workers", nodeId);
+      const effort = worker.effort ?? fleet.spec.config.effort ?? "medium";
       return await runWorker({
         nodeId,
         worker: workerWithResolvedModel(worker, resolvedModel),
         prompt,
         repoCwd: ctx.cwd,
         sessionDir,
+        thinkingLevel: effort,
         sessionFactory: resolvedModel ? sessionFactoryForModel(resolvedModel) : undefined,
         onEvent: (e) => {
           if (e.type === "turn") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { turns: e.turns });

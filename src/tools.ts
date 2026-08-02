@@ -24,6 +24,10 @@ export function registerFleetTools(pi: ExtensionAPI): void {
     ]),
     required: Type.Optional(Type.Boolean()),
   });
+  const EffortSchema = Type.Union([
+    Type.Literal("off"), Type.Literal("minimal"), Type.Literal("low"),
+    Type.Literal("medium"), Type.Literal("high"), Type.Literal("xhigh"), Type.Literal("max"),
+  ], { description: "Thinking effort level" });
   const WorkerSchema = Type.Object({
     id: Type.String({ description: "kebab-case, e.g. counter-a" }),
     type: Type.Union([
@@ -32,6 +36,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
     ]),
     task: Type.String({ description: "Full task instructions for the worker" }),
     model: Type.Optional(Type.String({ description: "Per-worker model override, e.g. gpt-5.4-mini" })),
+    effort: Type.Optional(EffortSchema),
     depends_on: Type.Optional(Type.Array(Type.String())),
     outputs: Type.Optional(Type.Array(OutputSchema)),
     iterate: Type.Optional(Type.Boolean({ description: "Replay node on each loop iteration" })),
@@ -43,6 +48,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
     config: Type.Optional(Type.Object({
       max_concurrent: Type.Optional(Type.Number()),
       model: Type.Optional(Type.String({ description: "Fleet-wide default model" })),
+      effort: Type.Optional(EffortSchema),
       warn_cost_usd: Type.Optional(Type.Number()),
       loop: Type.Optional(Type.Object({
         gate: Type.Union([Type.Literal("reviewer"), Type.Literal("none")]),
