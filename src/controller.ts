@@ -5,10 +5,11 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { writeWorkerPrompts } from "./fleet-store.js";
 import { resolveModelReference } from "./model-resolution.js";
 import { writeReport } from "./report.js";
-import { runWorker, sessionFactoryForModel, workerWithResolvedModel } from "./runner.js";
+import { runWorker, sessionFactoryForModel, workerWithResolvedModel, type AgentSessionLike } from "./runner.js";
 import { runFleet } from "./scheduler.js";
 import { patchNode, readState, writeState } from "./state.js";
 import type { FleetSpec, FleetState } from "./types.js";
+import { TERMINAL_NODE_STATUSES } from "./types.js";
 import { buildWidgetLines } from "./ui.js";
 import { dagNeedsFileFallback, renderDag } from "./viz.js";
 
@@ -20,6 +21,8 @@ export interface ActiveFleet {
   pauseSwitch: { paused: boolean };
   running: boolean;
   costWarned?: boolean;
+  sessions: Map<string, AgentSessionLike>;
+  killedNodes: Set<string>;
 }
 
 export interface ActiveFleetCell {
@@ -123,7 +126,7 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
       const prompt = await readFile(join(fleet.fleetRoot, "workers", nodeId, "prompt.md"), "utf-8");
       const sessionDir = join(fleet.fleetRoot, "workers", nodeId);
       const effort = worker.effort ?? fleet.spec.config.effort ?? "medium";
-      return await runWorker({
+      const res = await runWorker({
         nodeId,
         worker: workerWithResolvedModel(worker, resolvedModel),
         prompt,
@@ -131,6 +134,7 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
         sessionDir,
         thinkingLevel: effort,
         sessionFactory: resolvedModel ? sessionFactoryForModel(resolvedModel) : undefined,
+        onSession: (s) => { fleet.sessions.set(nodeId, s); },
         onEvent: (e) => {
           if (e.type === "turn") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { turns: e.turns });
           if (e.type === "tokens") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { tokens: e.tokens });
@@ -142,6 +146,8 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
           updateWidget(ctx, fleet);
         },
       });
+      fleet.sessions.delete(nodeId);
+      return res;
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       return { ok: false, turns: 0, tokens: 0, error };
@@ -159,6 +165,7 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
       spawn,
       killSwitch: fleet.killSwitch,
       pauseSwitch: fleet.pauseSwitch,
+      nodeKills: fleet.killedNodes,
       onNodeChange: (nodeId, nodeState) => {
         fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, nodeState);
         checkCostWarning();
@@ -194,7 +201,24 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
 export async function killFleet(target: string): Promise<string> {
   const active = activeFleet.current;
   if (!active) return "no fleet planned yet";
-  if (target !== "all") return "single-node kill not supported in v1 — use target \"all\"";
-  active.killSwitch.killed = true;
-  return "fleet kill requested";
+  if (target === "all") {
+    active.killSwitch.killed = true;
+    return "fleet kill requested";
+  }
+  const worker = active.spec.workers.find((w) => w.id === target);
+  const node = active.state.nodes[target];
+  if (!worker || !node) return `unknown node "${target}"`;
+  if (TERMINAL_NODE_STATUSES.has(node.status)) return `node "${target}" already ${node.status}`;
+  active.killedNodes.add(target);
+  const session = active.sessions.get(target);
+  if (session) {
+    await session.abort();
+    return `node "${target}" kill requested`;
+  }
+  if (!active.running) {
+    active.state = patchNode(active.fleetRoot, active.state, target, { status: "killed", ended_at: new Date().toISOString() });
+    await writeState(active.fleetRoot, active.state);
+    return `node "${target}" killed`;
+  }
+  return `node "${target}" kill requested (takes effect at next dispatch pass)`;
 }

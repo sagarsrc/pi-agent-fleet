@@ -85,4 +85,25 @@ describe("runFleet", () => {
     expect(s.status).toBe("killed");
     expect(s.nodes.a.status).toBe("killed");
   });
+
+  it("marks a nodeKills pending node as killed and blocks dependents", async () => {
+    const spawned: string[] = [];
+    const s = await runFleet({
+      spec: spec(), fleetRoot: await root(), repoCwd: "/tmp",
+      spawn: async (id) => { spawned.push(id); return { ok: true, turns: 1, tokens: 10 }; },
+      nodeKills: new Set(["a"]),
+    });
+    expect(s.nodes.a.status).toBe("killed");
+    expect(s.nodes.b.status).toBe("blocked");
+    expect(spawned).not.toContain("a");
+  });
+
+  it("failed spawn of a nodeKills node resolves to killed, not failed", async () => {
+    const s = await runFleet({
+      spec: spec(), fleetRoot: await root(), repoCwd: "/tmp",
+      spawn: async () => ({ ok: false, turns: 1, tokens: 10, error: "aborted" }),
+      nodeKills: new Set(["a"]),
+    });
+    expect(s.nodes.a.status).toBe("killed");
+  });
 });

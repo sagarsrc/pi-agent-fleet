@@ -46,6 +46,7 @@ export interface RunWorkerOpts {
   repoCwd: string;
   sessionDir?: string;
   onEvent: (e: WorkerEvent) => void;
+  onSession?: (session: AgentSessionLike) => void;
   sessionFactory?: SessionFactory;
   thinkingLevel?: ThinkingLevelName;
 }
@@ -74,6 +75,7 @@ export async function runWorker(opts: RunWorkerOpts): Promise<RunWorkerResult> {
     opts.onEvent({ type: "error", nodeId: opts.nodeId, message });
     return { ok: false, turns: 0, tokens: 0, cost: 0, error: message };
   }
+  opts.onSession?.(session);
   let turns = 0;
   let tokens = 0;
   let cost = 0;

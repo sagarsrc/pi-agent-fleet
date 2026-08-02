@@ -15,6 +15,7 @@ export interface RunFleetOpts {
   onNodeChange?: (nodeId: string, s: NodeState) => void;
   killSwitch?: { killed: boolean };
   pauseSwitch?: { paused: boolean };
+  nodeKills?: ReadonlySet<string>;
   resumeFrom?: FleetState;
   continuePass?: boolean;
   onIterationEnd?: (snap: IterationSnapshot) => void;
@@ -92,6 +93,10 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
         if (slots <= 0) break;
         const n = state.nodes[w.id];
         if (n.status !== "pending" && n.status !== "ready") continue;
+        if (opts.nodeKills?.has(w.id)) {
+          await patch(w.id, { status: "killed", ended_at: new Date().toISOString() });
+          continue;
+        }
         const depsDone = w.depends_on.every((d) => state.nodes[d].status === "completed");
         if (!depsDone) continue;
         slots--;
@@ -99,7 +104,8 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
         const p = opts.spawn(w.id).then(async (res) => {
           if (opts.killSwitch?.killed) return;
           if (!res.ok) {
-            await patch(w.id, { status: "failed", ended_at: new Date().toISOString(), turns: res.turns, tokens: res.tokens, cost_usd_estimate: res.cost ?? 0 });
+            const killed = opts.nodeKills?.has(w.id) === true;
+            await patch(w.id, { status: killed ? "killed" : "failed", ended_at: new Date().toISOString(), turns: res.turns, tokens: res.tokens, cost_usd_estimate: res.cost ?? 0 });
             return;
           }
           const contract = await verifyOutputs({

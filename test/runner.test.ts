@@ -76,4 +76,24 @@ describe("runWorker", () => {
     expect(res.ok).toBe(false);
     expect(res.error).toContain("model exploded");
   });
+
+  it("invokes onSession with the created session", async () => {
+    const fake = {
+      prompt: async () => {},
+      abort: async () => {},
+      subscribe: () => () => {},
+      dispose: () => {},
+    };
+    let seen: unknown;
+    await runWorker({
+      nodeId: "a",
+      worker: { id: "a", type: "research", task: "t", depends_on: [], outputs: [] },
+      prompt: "p",
+      repoCwd: "/tmp",
+      sessionFactory: async () => fake,
+      onSession: (s) => { seen = s; },
+      onEvent: () => {},
+    });
+    expect(seen).toBe(fake);
+  });
 });

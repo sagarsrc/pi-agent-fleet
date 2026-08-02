@@ -10,7 +10,7 @@ import { renderDag } from "./viz.js";
 
 export function registerFleetCommand(pi: ExtensionAPI): void {
   pi.registerCommand("fleet", {
-    description: "Fleet commands: /fleet viz, /fleet status, /fleet configure [show|set k v], /fleet clear, /fleet kill all, /fleet pause, /fleet resume, /fleet relaunch <node_id> [model]",
+    description: "Fleet commands: /fleet viz, /fleet status, /fleet configure [show|set k v], /fleet clear, /fleet kill all|<node_id>, /fleet pause, /fleet resume, /fleet relaunch <node_id> [model]",
     handler: async (args, ctx) => {
       const [cmd, target] = args.trim().split(/\s+/);
       if (cmd === "configure") {
@@ -160,7 +160,7 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
         ctx.ui.notify(`fleet relaunch requested for ${target}`, "info");
         return;
       }
-      ctx.ui.notify("usage: /fleet viz | /fleet status | /fleet configure [show|set k v] | /fleet clear | /fleet kill all | /fleet pause | /fleet resume | /fleet relaunch <node_id> [model]", "warning");
+      ctx.ui.notify("usage: /fleet viz | /fleet status | /fleet configure [show|set k v] | /fleet clear | /fleet kill all|<node_id> | /fleet pause | /fleet resume | /fleet relaunch <node_id> [model]", "warning");
     },
   });
 }

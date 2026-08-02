@@ -80,7 +80,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
       const state = initFleetState(v.spec);
       await ensureFleetGitignore(ctx.cwd);
       await writePlanFiles(fleetRoot, v.spec, state);
-      const active = activeFleet.current = { spec: v.spec, fleetRoot, state, killSwitch: { killed: false }, pauseSwitch: { paused: false }, running: false, costWarned: false };
+      const active = activeFleet.current = { spec: v.spec, fleetRoot, state, killSwitch: { killed: false }, pauseSwitch: { paused: false }, running: false, costWarned: false, sessions: new Map(), killedNodes: new Set() };
       updateWidget(ctx, active);
 
       const dag = await dagPreview(v.spec, undefined, fleetRoot);
@@ -140,9 +140,9 @@ export function registerFleetTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "fleet_kill",
     label: "Fleet Kill",
-    description: "Request fleet-wide kill. Use target \"all\". Single-node kill is not supported in v1.",
+    description: "Request a fleet-wide kill (target \"all\") or kill a single node by worker id. Killing a running node aborts its session; killing a pending node marks it killed at the next dispatch pass. Killed nodes can be revived with fleet_relaunch.",
     promptSnippet: "Kill the active fleet with target \"all\".",
-    parameters: Type.Object({ target: Type.String({ description: "Use all. Node ids are not supported in v1." }) }),
+    parameters: Type.Object({ target: Type.String({ description: "all or a worker id" }) }),
     async execute(_id, params) {
       return textResult(await killFleet(params.target));
     },
