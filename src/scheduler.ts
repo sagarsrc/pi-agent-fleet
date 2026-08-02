@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { verifyOutputs } from "./contracts.js";
 import { archiveIteration, initFleetState, patchNode, resetForIteration, snapshotIteration, writeState } from "./state.js";
 import { TERMINAL_NODE_STATUSES } from "./types.js";
-import type { FleetSpec, FleetState, IterationSnapshot, NodeState, Verdict } from "./types.js";
+import type { FleetSpec, FleetState, IterationSnapshot, NodeState, Verdict, WorkerSpec } from "./types.js";
 
 export type SpawnFn = (nodeId: string) => Promise<{ ok: boolean; turns: number; tokens: number; cost?: number; error?: string }>;
 
@@ -13,6 +13,8 @@ export interface RunFleetOpts {
   repoCwd: string | ((nodeId: string) => string);
   spawn: SpawnFn;
   onNodeChange?: (nodeId: string, s: NodeState) => void;
+  onNodeAdded?: (worker: WorkerSpec) => void | Promise<void>;
+  onNodeCompleted?: (nodeId: string) => Promise<string | undefined | void>;
   killSwitch?: { killed: boolean };
   pauseSwitch?: { paused: boolean };
   nodeKills?: ReadonlySet<string>;
@@ -25,7 +27,10 @@ export interface RunFleetOpts {
 const FAILED: ReadonlySet<string> = new Set(["failed", "contract_failed", "killed", "blocked"]);
 
 function allNodesTerminal(state: FleetState, spec: FleetSpec): boolean {
-  return spec.workers.every((w) => TERMINAL_NODE_STATUSES.has(state.nodes[w.id].status));
+  return spec.workers.every((w) => {
+    const n = state.nodes[w.id];
+    return !!n && TERMINAL_NODE_STATUSES.has(n.status);
+  });
 }
 
 async function cleanReplayOutputs(spec: FleetSpec, fleetRoot: string): Promise<void> {
@@ -69,18 +74,34 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
 
   const runPass = async (): Promise<void> => {
     while (true) {
+      // auto-initialize workers inserted into the spec after the run started
+      for (const w of spec.workers) {
+        if (!state.nodes[w.id]) {
+          state = {
+            ...state,
+            nodes: {
+              ...state.nodes,
+              [w.id]: { status: "pending", turns: 0, tokens: 0, cost_usd_estimate: 0, produced_outputs: [] },
+            },
+          };
+          await writeState(fleetRoot, state);
+          await opts.onNodeAdded?.(w);
+          opts.onNodeChange?.(w.id, state.nodes[w.id]);
+        }
+      }
       // block nodes whose deps failed
       for (const w of spec.workers) {
         const n = state.nodes[w.id];
+        if (!n) continue;
         if (n.status !== "pending" && n.status !== "ready") continue;
-        if (w.depends_on.some((d) => FAILED.has(state.nodes[d].status))) {
+        if (w.depends_on.some((d) => FAILED.has(state.nodes[d]?.status ?? ""))) {
           await patch(w.id, { status: "blocked", ended_at: new Date().toISOString() });
         }
       }
       if (opts.killSwitch?.killed) {
         for (const w of spec.workers) {
           const n = state.nodes[w.id];
-          if (!TERMINAL_NODE_STATUSES.has(n.status)) {
+          if (!n || !TERMINAL_NODE_STATUSES.has(n.status)) {
             await patch(w.id, { status: "killed", ended_at: new Date().toISOString() });
           }
         }
@@ -92,12 +113,13 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
       for (const w of spec.workers) {
         if (slots <= 0) break;
         const n = state.nodes[w.id];
+        if (!n) continue;
         if (n.status !== "pending" && n.status !== "ready") continue;
         if (opts.nodeKills?.has(w.id)) {
           await patch(w.id, { status: "killed", ended_at: new Date().toISOString() });
           continue;
         }
-        const depsDone = w.depends_on.every((d) => state.nodes[d].status === "completed");
+        const depsDone = w.depends_on.every((d) => state.nodes[d]?.status === "completed");
         if (!depsDone) continue;
         slots--;
         await patch(w.id, { status: "running", started_at: new Date().toISOString() });
@@ -125,12 +147,19 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
             contract_result: contract,
             produced_outputs: contract.checks.filter((c) => c.ok).map((c) => c.path),
           });
+          if (contract.ok) {
+            const note = await opts.onNodeCompleted?.(w.id);
+            if (note) await patch(w.id, { status_note: note });
+          }
         }).finally(() => running.delete(p));
         running.add(p);
       }
       if (running.size > 0) {
         await Promise.race(running);
-      } else if (spec.workers.every((w) => TERMINAL_NODE_STATUSES.has(state.nodes[w.id].status))) {
+      } else if (spec.workers.every((w) => {
+        const n = state.nodes[w.id];
+        return !!n && TERMINAL_NODE_STATUSES.has(n.status);
+      })) {
         break;
       }
     }
@@ -140,7 +169,7 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
   if (!loop) {
     await runPass();
     const anyFailed = spec.workers.some((w) =>
-      ["failed", "contract_failed"].includes(state.nodes[w.id].status));
+      ["failed", "contract_failed"].includes(state.nodes[w.id]?.status ?? ""));
     const finalStatus = opts.killSwitch?.killed ? "killed" : anyFailed ? "failed" : "completed";
     state = { ...state, status: finalStatus };
     await writeState(fleetRoot, state);
@@ -190,7 +219,7 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
     }
 
     const anyFailed = spec.workers.some((w) =>
-      ["failed", "contract_failed"].includes(state.nodes[w.id].status));
+      ["failed", "contract_failed"].includes(state.nodes[w.id]?.status ?? ""));
     if (anyFailed) {
       state = { ...state, status: "failed" };
       await writeState(fleetRoot, state);

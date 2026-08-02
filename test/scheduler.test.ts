@@ -120,4 +120,41 @@ describe("runFleet", () => {
     });
     expect(s.nodes.a.status).toBe("killed");
   });
+
+  it("auto-initializes spec workers added mid-run and dispatches them", async () => {
+    const sp = spec();
+    const added: string[] = [];
+    const s = await runFleet({
+      spec: sp, fleetRoot: await root(), repoCwd: "/tmp",
+      spawn: async (id) => {
+        if (id === "a") sp.workers.push({ id: "c", type: "write", task: "t", depends_on: ["a"], outputs: [] });
+        return { ok: true, turns: 1, tokens: 10 };
+      },
+      onNodeAdded: async (w) => { added.push(w.id); },
+    });
+    expect(added).toEqual(["c"]);
+    expect(s.nodes.c.status).toBe("completed");
+  });
+
+  it("patches status_note returned by onNodeCompleted", async () => {
+    const s = await runFleet({
+      spec: spec(), fleetRoot: await root(), repoCwd: "/tmp",
+      spawn: async () => ({ ok: true, turns: 1, tokens: 10 }),
+      onNodeCompleted: async (id) => (id === "a" ? "a-note" : undefined),
+    });
+    expect(s.nodes.a.status_note).toBe("a-note");
+    expect(s.nodes.b.status_note).toBeUndefined();
+  });
+
+  it("grows the DAG from onNodeCompleted and runs the new node", async () => {
+    const sp = spec();
+    const s = await runFleet({
+      spec: sp, fleetRoot: await root(), repoCwd: "/tmp",
+      spawn: async () => ({ ok: true, turns: 1, tokens: 10 }),
+      onNodeCompleted: async (id) => {
+        if (id === "b") sp.workers.push({ id: "c", type: "write", task: "t", depends_on: ["b"], outputs: [] });
+      },
+    });
+    expect(s.nodes.c.status).toBe("completed");
+  });
 });
