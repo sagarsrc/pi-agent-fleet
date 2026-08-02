@@ -116,3 +116,37 @@ export function patchNode(
   const cost = fleetCost({ ...state, nodes });
   return { ...state, nodes, cost_usd_estimate: cost };
 }
+
+export function resetForRelaunch(state: FleetState, spec: FleetSpec, nodeId: string): FleetState {
+  if (!state.nodes[nodeId]) throw new Error(`unknown node "${nodeId}"`);
+
+  const dependents: Record<string, string[]> = {};
+  for (const w of spec.workers) {
+    for (const dep of w.depends_on) {
+      (dependents[dep] ??= []).push(w.id);
+    }
+  }
+
+  const downstream = new Set<string>();
+  const walk = (id: string) => {
+    for (const d of dependents[id] ?? []) {
+      if (!downstream.has(d)) {
+        downstream.add(d);
+        walk(d);
+      }
+    }
+  };
+  walk(nodeId);
+
+  const fresh: NodeState = { status: "pending", turns: 0, tokens: 0, cost_usd_estimate: 0, produced_outputs: [] };
+  const nodes = { ...state.nodes };
+  nodes[nodeId] = fresh;
+  for (const id of downstream) {
+    if (state.nodes[id].status === "blocked") {
+      nodes[id] = fresh;
+    }
+  }
+
+  const cost = fleetCost({ ...state, nodes });
+  return { ...state, nodes, paused: false, cost_usd_estimate: cost };
+}

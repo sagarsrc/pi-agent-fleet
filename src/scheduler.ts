@@ -16,6 +16,7 @@ export interface RunFleetOpts {
   killSwitch?: { killed: boolean };
   pauseSwitch?: { paused: boolean };
   resumeFrom?: FleetState;
+  continuePass?: boolean;
   onIterationEnd?: (snap: IterationSnapshot) => void;
   prepareIteration?: (n: number, state: FleetState) => Promise<void>;
 }
@@ -43,7 +44,7 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
   if (opts.resumeFrom) {
     state = { ...opts.resumeFrom, paused: false, status: "running" };
     await writeState(fleetRoot, state);
-    if (allNodesTerminal(state, spec)) {
+    if (allNodesTerminal(state, spec) && !opts.continuePass) {
       state = resetForIteration(state, spec);
       await writeState(fleetRoot, state);
       await cleanReplayOutputs(spec, fleetRoot);

@@ -8,7 +8,7 @@ import { buildWorkerPrompt } from "./prompts.js";
 import { writeReport } from "./report.js";
 import { runWorker, type AgentSessionLike, type SessionFactory } from "./runner.js";
 import { runFleet } from "./scheduler.js";
-import { initFleetState, patchNode, readState, writeState } from "./state.js";
+import { initFleetState, patchNode, readState, resetForRelaunch, writeState } from "./state.js";
 import type { FleetSpec, FleetState, WorkerSpec } from "./types.js";
 import { buildWidgetLines } from "./ui.js";
 import { dagNeedsFileFallback, renderDag } from "./viz.js";
@@ -170,7 +170,7 @@ async function dagPreview(spec: FleetSpec, state: FleetState | undefined, fleetR
   return out;
 }
 
-async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resume = false): Promise<void> {
+async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resume = false, continuePass = false): Promise<void> {
   fleet.running = true;
   fleet.costWarned = false;
   updateWidget(ctx, fleet);
@@ -232,6 +232,13 @@ async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resume = fal
     }
   };
 
+  let resumeFrom: FleetState | undefined;
+  if (continuePass) {
+    resumeFrom = fleet.state;
+  } else if (resume) {
+    resumeFrom = await readState(fleet.fleetRoot);
+  }
+
   try {
     const state = await runFleet({
       spec: fleet.spec,
@@ -252,7 +259,8 @@ async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resume = fal
         fleet.state = state;
         await writeWorkerPrompts(fleet);
       },
-      resumeFrom: resume ? await readState(fleet.fleetRoot) : undefined,
+      resumeFrom,
+      continuePass,
     });
     fleet.state = state;
     fleet.running = false;
@@ -435,6 +443,42 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
+    name: "fleet_relaunch",
+    label: "Fleet Relaunch",
+    description: "Relaunch a failed node and any blocked downstream dependents. Optionally override the worker model for this run.",
+    promptSnippet: "Relaunch a failed fleet node.",
+    parameters: Type.Object({
+      node_id: Type.String({ description: "Worker id to relaunch" }),
+      model: Type.Optional(Type.String({ description: "Optional model override for this run, e.g. gpt-5.4-mini" })),
+    }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      if (!active) return textResult("no fleet planned yet");
+      if (active.running) return textResult("fleet is running");
+      const fleet = active;
+      await currentState(fleet);
+      if (fleet.state.status === "completed") return textResult("fleet completed, nothing to relaunch");
+      const worker = fleet.spec.workers.find((w) => w.id === params.node_id);
+      if (!worker) return textResult(`unknown node "${params.node_id}"`);
+      const node = fleet.state.nodes[params.node_id];
+      const relaunchable: ReadonlySet<string> = new Set(["failed", "contract_failed", "killed"]);
+      if (!node || !relaunchable.has(node.status)) {
+        return textResult(`node "${params.node_id}" status ${node?.status ?? "missing"} cannot be relaunched; must be failed, contract_failed, or killed`);
+      }
+      if (params.model) {
+        const resolved = resolveModelReference(ctx.modelRegistry, params.model);
+        if (!resolved.ok) return textResult(resolved.error);
+        const canonical = `${resolved.model.provider}/${resolved.model.id}`;
+        fleet.spec.workers = fleet.spec.workers.map((w) => w.id === params.node_id ? { ...w, model: canonical } : w);
+        await writeFile(join(fleet.fleetRoot, "fleet.json"), `${JSON.stringify(fleet.spec, null, 2)}\n`, "utf-8");
+      }
+      fleet.state = resetForRelaunch(fleet.state, fleet.spec, params.node_id);
+      await writeState(fleet.fleetRoot, fleet.state);
+      void startLoop(fleet, ctx, false, true);
+      return textResult(`fleet relaunch requested for ${params.node_id}`);
+    },
+  });
+
+  pi.registerTool({
     name: "fleet_report",
     label: "Fleet Report",
     description: "Regenerate and return the active fleet markdown report from current state.",
@@ -449,7 +493,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("fleet", {
-    description: "Fleet commands: /fleet viz, /fleet status, /fleet clear, /fleet kill all, /fleet pause, /fleet resume",
+    description: "Fleet commands: /fleet viz, /fleet status, /fleet clear, /fleet kill all, /fleet pause, /fleet resume, /fleet relaunch <node_id> [model]",
     handler: async (args, ctx) => {
       const [cmd, target] = args.trim().split(/\s+/);
       if (!active) {
@@ -504,7 +548,49 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify("fleet resumed", "info");
         return;
       }
-      ctx.ui.notify("usage: /fleet viz | /fleet status | /fleet clear | /fleet kill all | /fleet pause | /fleet resume", "warning");
+      if (cmd === "relaunch") {
+        if (!target) {
+          ctx.ui.notify("usage: /fleet relaunch <node_id> [model]", "warning");
+          return;
+        }
+        if (active.running) {
+          ctx.ui.notify("fleet is running", "warning");
+          return;
+        }
+        await currentState(active);
+        if (active.state.status === "completed") {
+          ctx.ui.notify("fleet completed, nothing to relaunch", "warning");
+          return;
+        }
+        const worker = active.spec.workers.find((w) => w.id === target);
+        if (!worker) {
+          ctx.ui.notify(`unknown node "${target}"`, "warning");
+          return;
+        }
+        const node = active.state.nodes[target];
+        const relaunchable: ReadonlySet<string> = new Set(["failed", "contract_failed", "killed"]);
+        if (!node || !relaunchable.has(node.status)) {
+          ctx.ui.notify(`node "${target}" status ${node?.status ?? "missing"} cannot be relaunched; must be failed, contract_failed, or killed`, "warning");
+          return;
+        }
+        const model = args.trim().split(/\s+/).slice(2).join(" ") || undefined;
+        if (model) {
+          const resolved = resolveModelReference(ctx.modelRegistry, model);
+          if (!resolved.ok) {
+            ctx.ui.notify(resolved.error, "error");
+            return;
+          }
+          const canonical = `${resolved.model.provider}/${resolved.model.id}`;
+          active.spec.workers = active.spec.workers.map((w) => w.id === target ? { ...w, model: canonical } : w);
+          await writeFile(join(active.fleetRoot, "fleet.json"), `${JSON.stringify(active.spec, null, 2)}\n`, "utf-8");
+        }
+        active.state = resetForRelaunch(active.state, active.spec, target);
+        await writeState(active.fleetRoot, active.state);
+        void startLoop(active, ctx, false, true);
+        ctx.ui.notify(`fleet relaunch requested for ${target}`, "info");
+        return;
+      }
+      ctx.ui.notify("usage: /fleet viz | /fleet status | /fleet clear | /fleet kill all | /fleet pause | /fleet resume | /fleet relaunch <node_id> [model]", "warning");
     },
   });
 }
