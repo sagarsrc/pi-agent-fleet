@@ -5,6 +5,7 @@ import { Type } from "typebox";
 import { validateFleetSpec } from "./dag.js";
 import { loadPreferences, mergeFleetConfig } from "./preferences.js";
 import { activeFleet, currentState, dagPreview, killFleet, prepareRelaunch, startLoop, statusText, updateWidget } from "./controller.js";
+import { editConfig, editNode, type ConfigEditKey, type NodeEditKey } from "./edits.js";
 import { ensureFleetGitignore, fleetRootFor, isInsideGitRepo, writePlanFiles, writeWorkerPrompts } from "./fleet-store.js";
 import { resolveModelReference, validateFleetModels } from "./model-resolution.js";
 import { writeReport } from "./report.js";
@@ -234,6 +235,28 @@ export function registerFleetTools(pi: ExtensionAPI): void {
       const state = await currentState(active);
       const report = await writeReport({ spec: active.spec, state, fleetRoot: active.fleetRoot, repoCwd: ctx.cwd });
       return textResult(report, { reportPath: join(active.fleetRoot, "report.md") });
+    },
+  });
+
+  pi.registerTool({
+    name: "fleet_edit",
+    label: "Fleet Edit",
+    description: "Edit the active fleet: a pending node's model, effort, or task — or fleet config (max_concurrent, warn_cost_usd, model, effort) when node_id is omitted. Changes persist to fleet.json and apply to nodes not yet dispatched. Refuses edits to nodes already running or terminal.",
+    promptSnippet: "Edit a pending fleet node or fleet config.",
+    parameters: Type.Object({
+      node_id: Type.Optional(Type.String({ description: "Worker id to edit; omit for fleet config edits" })),
+      key: Type.String({ description: "Node keys: model, effort, task. Config keys: max_concurrent, warn_cost_usd, model, effort" }),
+      value: Type.String({ description: "New value" }),
+    }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const active = activeFleet.current;
+      if (!active) return textResult("no fleet planned yet");
+      await currentState(active);
+      const r = params.node_id
+        ? await editNode(active, params.node_id, params.key as NodeEditKey, params.value, ctx.modelRegistry)
+        : await editConfig(active, params.key as ConfigEditKey, params.value, ctx.modelRegistry);
+      if (r.ok) updateWidget(ctx, active);
+      return textResult(r.message);
     },
   });
 }

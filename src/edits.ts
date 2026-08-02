@@ -1,0 +1,105 @@
+import { stat, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { ActiveFleet } from "./controller.js";
+import { resolveModelReference, type ModelRegistryLike } from "./model-resolution.js";
+import { buildWorkerPrompt } from "./prompts.js";
+import { THINKING_LEVELS } from "./types.js";
+import type { ThinkingLevelName } from "./types.js";
+
+export type NodeEditKey = "model" | "effort" | "task";
+export type ConfigEditKey = "max_concurrent" | "warn_cost_usd" | "model" | "effort";
+
+export interface EditResult {
+  ok: boolean;
+  message: string;
+}
+
+async function persistSpec(fleet: ActiveFleet): Promise<void> {
+  await writeFile(join(fleet.fleetRoot, "fleet.json"), `${JSON.stringify(fleet.spec, null, 2)}\n`, "utf-8");
+}
+
+export async function editNode(
+  fleet: ActiveFleet,
+  nodeId: string,
+  key: NodeEditKey,
+  value: string,
+  registry: ModelRegistryLike,
+): Promise<EditResult> {
+  const worker = fleet.spec.workers.find((w) => w.id === nodeId);
+  const node = fleet.state.nodes[nodeId];
+  if (!worker || !node) return { ok: false, message: `unknown node "${nodeId}"` };
+  if (node.status !== "pending" && node.status !== "ready") {
+    return { ok: false, message: `node "${nodeId}" is ${node.status}; only pending nodes can be edited` };
+  }
+  switch (key) {
+    case "model": {
+      const r = resolveModelReference(registry, value);
+      if (!r.ok) return { ok: false, message: r.error };
+      worker.model = `${r.model.provider}/${r.model.id}`;
+      break;
+    }
+    case "effort": {
+      if (!THINKING_LEVELS.includes(value as ThinkingLevelName)) {
+        return { ok: false, message: `effort must be one of ${THINKING_LEVELS.join(", ")}` };
+      }
+      worker.effort = value as ThinkingLevelName;
+      break;
+    }
+    case "task": {
+      if (value.trim().length === 0) return { ok: false, message: "task must be non-empty" };
+      worker.task = value;
+      const promptPath = join(fleet.fleetRoot, "workers", nodeId, "prompt.md");
+      try {
+        await stat(promptPath);
+        const prompt = buildWorkerPrompt({ spec: fleet.spec, state: fleet.state, workerId: nodeId, fleetRoot: fleet.fleetRoot });
+        await writeFile(promptPath, prompt, "utf-8");
+      } catch {
+        // prompt.md not written yet — nothing to regenerate
+      }
+      break;
+    }
+    default:
+      return { ok: false, message: `unknown node edit key "${String(key)}" (keys: model, effort, task)` };
+  }
+  await persistSpec(fleet);
+  return { ok: true, message: `node "${nodeId}" ${key} updated` };
+}
+
+export async function editConfig(
+  fleet: ActiveFleet,
+  key: ConfigEditKey,
+  value: string,
+  registry: ModelRegistryLike,
+): Promise<EditResult> {
+  switch (key) {
+    case "max_concurrent": {
+      const n = Number(value);
+      if (!Number.isInteger(n) || n < 1) return { ok: false, message: "max_concurrent must be an integer >= 1" };
+      fleet.spec.config.max_concurrent = n;
+      break;
+    }
+    case "warn_cost_usd": {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0) return { ok: false, message: "warn_cost_usd must be a number >= 0" };
+      fleet.spec.config.warn_cost_usd = n;
+      break;
+    }
+    case "model": {
+      const r = resolveModelReference(registry, value);
+      if (!r.ok) return { ok: false, message: r.error };
+      fleet.spec.config.model = `${r.model.provider}/${r.model.id}`;
+      break;
+    }
+    case "effort": {
+      if (!THINKING_LEVELS.includes(value as ThinkingLevelName)) {
+        return { ok: false, message: `effort must be one of ${THINKING_LEVELS.join(", ")}` };
+      }
+      fleet.spec.config.effort = value as ThinkingLevelName;
+      break;
+    }
+    default:
+      return { ok: false, message: `unknown config key "${String(key)}" (keys: max_concurrent, warn_cost_usd, model, effort)` };
+  }
+  await persistSpec(fleet);
+  return { ok: true, message: `config.${key} updated` };
+}

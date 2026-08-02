@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { activeFleet, currentState, killFleet, prepareRelaunch, startLoop, updateWidget } from "./controller.js";
+import { editConfig, editNode, type ConfigEditKey, type NodeEditKey } from "./edits.js";
 import { resolveModelReference } from "./model-resolution.js";
 import { clearPreference, loadPreferences, PREFERENCE_KEYS, savePreferences, setPreference } from "./preferences.js";
 import { resetForRelaunch, writeState } from "./state.js";
@@ -10,7 +11,7 @@ import { renderDag } from "./viz.js";
 
 export function registerFleetCommand(pi: ExtensionAPI): void {
   pi.registerCommand("fleet", {
-    description: "Fleet commands: /fleet viz, /fleet status, /fleet configure [show|set k v], /fleet clear, /fleet kill all|<node_id>, /fleet pause, /fleet resume, /fleet relaunch <node_id> [model]",
+    description: "Fleet commands: /fleet viz, /fleet status, /fleet configure [show|set k v], /fleet edit <node_id>|config ..., /fleet clear, /fleet kill all|<node_id>, /fleet pause, /fleet resume, /fleet relaunch <node_id> [model]",
     handler: async (args, ctx) => {
       const [cmd, target] = args.trim().split(/\s+/);
       if (cmd === "configure") {
@@ -160,7 +161,45 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
         ctx.ui.notify(`fleet relaunch requested for ${target}`, "info");
         return;
       }
-      ctx.ui.notify("usage: /fleet viz | /fleet status | /fleet configure [show|set k v] | /fleet clear | /fleet kill all|<node_id> | /fleet pause | /fleet resume | /fleet relaunch <node_id> [model]", "warning");
+      if (cmd === "edit") {
+        const parts = args.trim().split(/\s+/).filter((s) => s.length > 0);
+        const target = parts[1];
+        const key = parts[2];
+        let value = parts.slice(3).join(" ");
+        if (!target || !key) {
+          ctx.ui.notify("usage: /fleet edit <node_id> model|effort <value> | /fleet edit <node_id> task [text] | /fleet edit config <key> <value>", "warning");
+          return;
+        }
+        await currentState(active);
+        if (target === "config") {
+          if (!value) {
+            ctx.ui.notify("usage: /fleet edit config max_concurrent|warn_cost_usd|model|effort <value>", "warning");
+            return;
+          }
+          const r = await editConfig(active, key as ConfigEditKey, value, ctx.modelRegistry);
+          ctx.ui.notify(r.message, r.ok ? "info" : "error");
+          if (r.ok) updateWidget(ctx, active);
+          return;
+        }
+        if (key === "task" && !value) {
+          const current = active.spec.workers.find((w) => w.id === target)?.task ?? "";
+          const edited = await ctx.ui.editor(`task for ${target}:`, current);
+          if (edited === undefined) {
+            ctx.ui.notify("edit cancelled", "warning");
+            return;
+          }
+          value = edited;
+        }
+        if (!value) {
+          ctx.ui.notify("usage: /fleet edit <node_id> model|effort <value> | /fleet edit <node_id> task [text]", "warning");
+          return;
+        }
+        const r = await editNode(active, target, key as NodeEditKey, value, ctx.modelRegistry);
+        ctx.ui.notify(r.message, r.ok ? "info" : "error");
+        if (r.ok) updateWidget(ctx, active);
+        return;
+      }
+      ctx.ui.notify("usage: /fleet viz | /fleet status | /fleet configure [show|set k v] | /fleet edit <node_id>|config ... | /fleet clear | /fleet kill all|<node_id> | /fleet pause | /fleet resume | /fleet relaunch <node_id> [model]", "warning");
     },
   });
 }
