@@ -58,8 +58,9 @@ export async function insertWorkers(
       for (const w of fresh) {
         nodes[w.id] = { status: "pending" as const, turns: 0, tokens: 0, cost_usd_estimate: 0, produced_outputs: [] };
       }
-      fleet.state = { ...fleet.state, nodes };
-      await writeState(fleet.fleetRoot, fleet.state);
+      const next = { ...fleet.state, nodes };
+      await writeState(fleet.fleetRoot, next);
+      fleet.state = next;
     }
   } catch (e: unknown) {
     return { ok: false, message: `insert failed: ${e instanceof Error ? e.message : String(e)}` };
