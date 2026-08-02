@@ -47,21 +47,25 @@ export async function insertWorkers(
       w.model = `${r.model.provider}/${r.model.id}`;
     }
   }
+  try {
+    for (const w of fresh) {
+      await mkdir(join(fleet.fleetRoot, "workers", w.id, "output"), { recursive: true });
+      const prompt = buildWorkerPrompt({ spec: v.spec, state: fleet.state, workerId: w.id, fleetRoot: fleet.fleetRoot });
+      await writeFile(join(fleet.fleetRoot, "workers", w.id, "prompt.md"), prompt, "utf-8");
+    }
+    if (!fleet.running) {
+      const nodes = { ...fleet.state.nodes };
+      for (const w of fresh) {
+        nodes[w.id] = { status: "pending" as const, turns: 0, tokens: 0, cost_usd_estimate: 0, produced_outputs: [] };
+      }
+      fleet.state = { ...fleet.state, nodes };
+      await writeState(fleet.fleetRoot, fleet.state);
+    }
+  } catch (e: unknown) {
+    return { ok: false, message: `insert failed: ${e instanceof Error ? e.message : String(e)}` };
+  }
   fleet.spec.workers.push(...fresh);
   await persistFleetJson(fleet);
-  for (const w of fresh) {
-    await mkdir(join(fleet.fleetRoot, "workers", w.id, "output"), { recursive: true });
-    const prompt = buildWorkerPrompt({ spec: fleet.spec, state: fleet.state, workerId: w.id, fleetRoot: fleet.fleetRoot });
-    await writeFile(join(fleet.fleetRoot, "workers", w.id, "prompt.md"), prompt, "utf-8");
-  }
-  if (!fleet.running) {
-    const nodes = { ...fleet.state.nodes };
-    for (const w of fresh) {
-      nodes[w.id] = { status: "pending" as const, turns: 0, tokens: 0, cost_usd_estimate: 0, produced_outputs: [] };
-    }
-    fleet.state = { ...fleet.state, nodes };
-    await writeState(fleet.fleetRoot, fleet.state);
-  }
   const ids = fresh.map((w) => w.id);
   return { ok: true, message: `inserted ${ids.join(", ")}`, inserted: ids };
 }

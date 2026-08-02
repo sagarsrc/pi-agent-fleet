@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -120,5 +120,17 @@ describe("insertWorkers", () => {
     }], registry);
     expect(r.ok).toBe(false);
     expect(r.message).toContain("verdict");
+  });
+
+  it("does not mutate fleet.spec when prompt writing fails", async () => {
+    const fleet = await plannedFleet(false);
+    await writeFile(join(fleet.fleetRoot, "fleet.json"), JSON.stringify(fleet.spec), "utf-8");
+    // make the workers dir a FILE so mkdir recursive fails
+    await writeFile(join(fleet.fleetRoot, "workers"), "not a dir", "utf-8");
+    const r = await insertWorkers(fleet, [{ id: "c", type: "write", task: "do c", depends_on: ["b"] }], registry);
+    expect(r.ok).toBe(false);
+    expect(fleet.spec.workers.length).toBe(2);
+    const persisted = JSON.parse(await readFile(join(fleet.fleetRoot, "fleet.json"), "utf-8"));
+    expect(persisted.workers.length).toBe(2);
   });
 });
