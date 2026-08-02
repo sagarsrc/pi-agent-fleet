@@ -8,7 +8,6 @@ import { ensureFleetGitignore, fleetRootFor, isInsideGitRepo, writePlanFiles, wr
 import { resolveModelReference, validateFleetModels } from "./model-resolution.js";
 import { writeReport } from "./report.js";
 import { initFleetState, resetForRelaunch, writeState } from "./state.js";
-import { buildWidgetLines } from "./ui.js";
 import { renderDag } from "./viz.js";
 
 export function textResult(text: string, details: Record<string, unknown> = {}) {
@@ -35,7 +34,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
       Type.Literal("reviewer"), Type.Literal("write"), Type.Literal("read-only"),
     ]),
     task: Type.String({ description: "Full task instructions for the worker" }),
-    model: Type.Optional(Type.String({ description: "Per-worker model override, e.g. gpt-5.4-mini" })),
+    model: Type.Optional(Type.String({ description: "Per-worker model override, e.g. provider/model-id" })),
     effort: Type.Optional(EffortSchema),
     depends_on: Type.Optional(Type.Array(Type.String())),
     outputs: Type.Optional(Type.Array(OutputSchema)),
@@ -190,7 +189,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
     promptSnippet: "Relaunch a failed fleet node.",
     parameters: Type.Object({
       node_id: Type.String({ description: "Worker id to relaunch" }),
-      model: Type.Optional(Type.String({ description: "Optional model override for this run, e.g. gpt-5.4-mini" })),
+      model: Type.Optional(Type.String({ description: "Optional model override for this run, e.g. provider/model-id" })),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
       const active = activeFleet.current;

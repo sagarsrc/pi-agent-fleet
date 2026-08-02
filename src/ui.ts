@@ -17,7 +17,7 @@ export interface WidgetOpts {
 }
 
 export function buildWidgetLines(spec: FleetSpec, state: FleetState, opts: WidgetOpts = {}): string[] {
-  const maxLines = opts.maxLines ?? DEFAULT_MAX_LINES;
+  const maxLines = Math.max(opts.maxLines ?? DEFAULT_MAX_LINES, 3);
   const done = spec.workers.filter((w) => state.nodes[w.id].status === "completed").length;
   const loop = spec.config.loop;
   let header: string;

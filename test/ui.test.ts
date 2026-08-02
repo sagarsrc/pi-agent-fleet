@@ -94,4 +94,9 @@ describe("widget stats, truncation, spinner", () => {
     const lines = buildWidgetLines(loopSpec, initFleetState(loopSpec));
     expect(lines[0]).toContain("lgtm streak 0/2");
   });
+
+  it("clamps degenerate maxLines to 3", () => {
+    const lines = buildWidgetLines(many, initFleetState(many), { maxLines: 2 });
+    expect(lines.length).toBe(3);
+  });
 });

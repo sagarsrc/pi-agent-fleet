@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { startSpinner, type ActiveFleet } from "../src/controller.js";
+import { startLoop, startSpinner, type ActiveFleet } from "../src/controller.js";
 import { initFleetState, patchNode } from "../src/state.js";
 import type { FleetSpec } from "../src/types.js";
 
@@ -41,5 +41,23 @@ describe("startSpinner", () => {
     const ctx = { hasUI: false } as unknown as ExtensionContext;
     const stop = startSpinner(ctx, runningFleet(), 100);
     expect(() => stop()).not.toThrow();
+  });
+});
+
+describe("startLoop", () => {
+  it("resume with unreadable state.json fails cleanly without starting the spinner", async () => {
+    const notifications: string[] = [];
+    const ctx = {
+      hasUI: true,
+      ui: {
+        setWidget: () => {},
+        notify: (msg: string) => notifications.push(msg),
+      },
+    } as unknown as ExtensionContext;
+    const fleet = runningFleet();
+    fleet.fleetRoot = "/nonexistent/fleet/root";
+    await startLoop(fleet, ctx, true);
+    expect(fleet.running).toBe(false);
+    expect(notifications.some((m) => m.startsWith("fleet failed:"))).toBe(true);
   });
 });

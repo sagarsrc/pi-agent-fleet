@@ -70,10 +70,24 @@ export async function dagPreview(spec: FleetSpec, state: FleetState | undefined,
 }
 
 export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resume = false, continuePass = false): Promise<void> {
+  let resumeFrom: FleetState | undefined;
+  try {
+    if (continuePass) {
+      resumeFrom = fleet.state;
+    } else if (resume) {
+      resumeFrom = await readState(fleet.fleetRoot);
+    }
+  } catch (err: unknown) {
+    fleet.running = false;
+    const error = err instanceof Error ? err.message : String(err);
+    if (ctx.hasUI) ctx.ui.notify(`fleet failed: ${error}`, "error");
+    return;
+  }
+
   fleet.running = true;
   fleet.costWarned = false;
-  updateWidget(ctx, fleet);
   const stopSpinner = startSpinner(ctx, fleet);
+  updateWidget(ctx, fleet);
 
   const checkCostWarning = () => {
     const warn = fleet.spec.config.warn_cost_usd;
@@ -133,13 +147,6 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
       return { ok: false, turns: 0, tokens: 0, error };
     }
   };
-
-  let resumeFrom: FleetState | undefined;
-  if (continuePass) {
-    resumeFrom = fleet.state;
-  } else if (resume) {
-    resumeFrom = await readState(fleet.fleetRoot);
-  }
 
   try {
     const state = await runFleet({
