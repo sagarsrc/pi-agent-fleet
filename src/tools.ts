@@ -8,6 +8,7 @@ import { activeFleet, currentState, dagPreview, killFleet, prepareRelaunch, star
 import { editConfig, editNode, type ConfigEditKey, type NodeEditKey } from "./edits.js";
 import { ensureFleetGitignore, fleetRootFor, isInsideGitRepo, writePlanFiles, writeWorkerPrompts } from "./fleet-store.js";
 import { resolveModelReference, validateFleetModels } from "./model-resolution.js";
+import { runFleetDesign, slugifyFleetName } from "./planner.js";
 import { writeReport } from "./report.js";
 import { initFleetState, resetForRelaunch, writeState } from "./state.js";
 import { renderDag } from "./viz.js";
@@ -220,6 +221,44 @@ export function registerFleetTools(pi: ExtensionAPI): void {
       prepareRelaunch(fleet, params.node_id);
       void startLoop(fleet, ctx, false, true);
       return textResult(`fleet relaunch requested for ${params.node_id}`);
+    },
+  });
+
+  pi.registerTool({
+    name: "fleet_design",
+    label: "Fleet Design",
+    description: "Draft a fleet DAG from plain-language requirements. Spawns a planner agent that writes a fleet.json definition, validates it, and returns an ASCII preview with the JSON. Does NOT plan or launch anything. Use this before fleet_plan whenever requirements are prose rather than a ready fleet definition.",
+    promptSnippet: "Draft a fleet DAG from plain-language requirements.",
+    parameters: Type.Object({
+      requirements: Type.String({ description: "Plain-language description of the goal" }),
+      fleet_name: Type.Optional(Type.String({ description: "kebab-case; derived from requirements when omitted" })),
+    }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const fleetName = params.fleet_name ?? slugifyFleetName(params.requirements);
+      if (!/^[a-z0-9][a-z0-9-]*$/.test(fleetName)) {
+        return textResult(`fleet_name "${fleetName}" must be kebab-case`);
+      }
+      const ts = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+      const designRoot = join(ctx.cwd, ".fleet", `design-${fleetName}-${ts}`);
+      await ensureFleetGitignore(ctx.cwd);
+      const result = await runFleetDesign({
+        requirements: params.requirements,
+        fleetName,
+        designRoot,
+        repoCwd: ctx.cwd,
+      });
+      if (!result.ok) return textResult(`fleet design failed: ${result.error}`);
+      const v = validateFleetSpec(result.draft);
+      if (!v.ok) {
+        return textResult(
+          `planner produced an invalid fleet:\n${v.errors.join("\n")}\n\ndraft JSON:\n${JSON.stringify(result.draft, null, 2)}\n\nFix the JSON and call fleet_plan directly, or retry fleet_design with clearer requirements.`,
+        );
+      }
+      const dag = renderDag(v.spec);
+      return textResult(
+        `${dag}\n\nrationale: ${join(designRoot, "planner", "output", "rationale.md")}\n\nfleet JSON:\n${JSON.stringify(result.draft, null, 2)}\n\nShow this preview to the user. If they approve, call fleet_plan with this definition (fleet_launch only after their explicit confirmation).`,
+        { designRoot },
+      );
     },
   });
 
