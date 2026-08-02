@@ -108,5 +108,14 @@ describe("getDependents", () => {
     expect(getDependents(r.spec, "a").sort()).toEqual(["b", "c"]);
     expect(getDependents(r.spec, "d")).toEqual([]);
   });
+
+  it("leaves config.model undefined when not provided", () => {
+    const r = validateFleetSpec({
+      fleet_name: "t", type: "dag",
+      workers: [{ id: "a", type: "research", task: "t" }],
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.spec.config.model).toBeUndefined();
+  });
 });
 

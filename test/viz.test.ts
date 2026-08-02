@@ -37,4 +37,13 @@ describe("renderDag", () => {
     }
     expect(dagNeedsFileFallback(many, 200)).toBe(true);
   });
+
+  it("renderDag falls back to (default) model label", () => {
+    const s: FleetSpec = {
+      fleet_name: "t", type: "dag",
+      config: { max_concurrent: 1 },
+      workers: [{ id: "a", type: "research", task: "t", depends_on: [], outputs: [] }],
+    };
+    expect(renderDag(s)).toContain("a (default)");
+  });
 });

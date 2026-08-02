@@ -23,4 +23,14 @@ describe("buildWidgetLines", () => {
     expect(lines[1]).toContain("3 turns");
     expect(lines[2]).toContain("○ b");
   });
+
+  it("falls back to (default) model label", () => {
+    const s: FleetSpec = {
+      fleet_name: "t", type: "dag",
+      config: { max_concurrent: 1 },
+      workers: [{ id: "a", type: "research", task: "t", depends_on: [], outputs: [] }],
+    };
+    const lines = buildWidgetLines(s, initFleetState(s));
+    expect(lines[1]).toContain("(default)");
+  });
 });

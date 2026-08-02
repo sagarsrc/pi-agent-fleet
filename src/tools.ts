@@ -63,7 +63,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
     name: "fleet_plan",
     label: "Fleet Plan",
     description:
-      "Validate a fleet DAG definition, create its fleet root, and return an ASCII preview. Does NOT launch. Call fleet_launch after the user confirms the preview. Model selection standard: cheap/fast models (e.g. gpt-5.4-mini, kimi-for-coding-highspeed) for trivial writers/validators; coding models (e.g. kimi-for-coding, gpt-5.5) for code-run workers; strong reasoning models (e.g. k3, gpt-5.6-sol) for reviewers/synthesizers. Set worker.model per node to override config.model.",
+      "Validate a fleet DAG definition, create its fleet root, and return an ASCII preview. Does NOT launch. Present the preview to the user; call fleet_launch only after they explicitly confirm. Choose models by task difficulty: cheap/fast models for trivial writers and validators, mid-tier coding models for code-run workers, strongest reasoning models for reviewers and synthesizers. When several models fit a tier, vary providers across nodes instead of defaulting to one family. Set worker.model per node to override config.model. All model refs are validated against the live registry — planning fails if any model is unavailable.",
     promptSnippet: "Plan a DAG-of-agents fleet from a fleet definition without launching it.",
     parameters: Type.Object({
       fleet: FleetSchema,
@@ -80,14 +80,14 @@ export function registerFleetTools(pi: ExtensionAPI): void {
       updateWidget(ctx, active);
 
       const dag = await dagPreview(v.spec, undefined, fleetRoot);
-      return textResult(`${dag}\n\nfleet root: ${fleetRoot}\ncall fleet_launch to start`, { fleetRoot, layers: v.layers });
+      return textResult(`${dag}\n\nfleet root: ${fleetRoot}\nShow this preview to the user. Call fleet_launch only after they explicitly confirm.`, { fleetRoot, layers: v.layers });
     },
   });
 
   pi.registerTool({
     name: "fleet_launch",
     label: "Fleet Launch",
-    description: "Launch the active planned fleet. Runs the DAG in the background and updates the live fleet widget. Pass skip_confirm: true to bypass the interactive confirmation (e.g. when the user already approved the plan or is running unattended).",
+    description: "Launch the active planned fleet after the user has confirmed the plan preview. Runs the DAG in the background and updates the live fleet widget. Pass skip_confirm: true only when the user already approved this exact plan (e.g. unattended runs); otherwise the interactive confirmation is shown.",
     promptSnippet: "Launch the currently planned fleet after preview confirmation.",
     parameters: Type.Object({
       skip_confirm: Type.Optional(Type.Boolean({ description: "Skip the interactive launch confirmation dialog" })),

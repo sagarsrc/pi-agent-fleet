@@ -23,8 +23,9 @@ export function buildWidgetLines(spec: FleetSpec, state: FleetState): string[] {
     const branch = i === spec.workers.length - 1 ? "└─" : "├─";
     const detail = n.status === "running" ? ` · ${n.turns} turns · ${(n.tokens / 1000).toFixed(1)}k tok` : "";
     const note = n.status_note ? ` · ${n.status_note}` : "";
-    const model = w.model ?? spec.config.model;
-    lines.push(`${branch} ${ICON[n.status]} ${w.id} (${model})${detail}${note}`);
+    const model = w.model ?? spec.config.model ?? "(default)";
+    const modelLabel = model === "(default)" ? model : `(${model})`;
+    lines.push(`${branch} ${ICON[n.status]} ${w.id} ${modelLabel}${detail}${note}`);
   });
   return lines;
 }

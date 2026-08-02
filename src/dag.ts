@@ -60,7 +60,7 @@ export function validateFleetSpec(
   const cfg = (r?.config ?? {}) as Record<string, unknown>;
   const maxConcurrent = typeof cfg.max_concurrent === "number" ? cfg.max_concurrent : 4;
   if (maxConcurrent < 1) errors.push("config.max_concurrent must be >= 1");
-  const model = typeof cfg.model === "string" ? cfg.model : "gpt-5.4";
+  const model = typeof cfg.model === "string" ? cfg.model : undefined;
   const effort = typeof cfg.effort === "string" ? cfg.effort as ThinkingLevelName : undefined;
   if (effort !== undefined && !EFFORTS.includes(effort)) {
     errors.push(`config.effort must be one of ${EFFORTS.join(", ")}`);

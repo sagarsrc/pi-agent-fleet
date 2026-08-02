@@ -11,11 +11,12 @@ export function renderDag(spec: FleetSpec, state?: FleetState): string {
   const layers = topoLayers(spec);
   const modelOf = (id: string): string => {
     const w = spec.workers.find((x) => x.id === id);
-    return w?.model ?? spec.config.model;
+    return w?.model ?? spec.config.model ?? "(default)";
   };
   const label = (id: string): string => {
     const st = state?.nodes[id]?.status;
-    const base = `${id} (${modelOf(id)})`;
+    const model = modelOf(id);
+    const base = model === "(default)" ? `${id} ${model}` : `${id} (${model})`;
     return st ? `${ICON[st]} ${base}` : base;
   };
   const lines: string[] = [];

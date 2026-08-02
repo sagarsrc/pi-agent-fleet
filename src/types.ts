@@ -33,7 +33,7 @@ export interface WorkerSpec {
 
 export interface FleetConfig {
   max_concurrent: number;
-  model: string;
+  model?: string;
   effort?: ThinkingLevelName;
   warn_cost_usd?: number;
   loop?: LoopConfig;
