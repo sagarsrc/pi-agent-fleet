@@ -39,9 +39,8 @@ async function isInsideGitRepo(cwd: string): Promise<boolean> {
     try {
       const s = await stat(join(dir, ".git"));
       if (s.isFile() || s.isDirectory()) return true;
-    } catch (e: unknown) {
-      const err = e as { code?: string };
-      if (err.code !== "ENOENT") throw e;
+    } catch {
+      // any stat failure (ENOENT, EACCES, etc.) is treated as not-found
     }
     const parent = dirname(dir);
     if (parent === dir) return false;
@@ -244,7 +243,7 @@ async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resume = fal
     const report = await writeReport({ spec: fleet.spec, state, fleetRoot: fleet.fleetRoot, repoCwd: ctx.cwd });
     const last = state.iterations[state.iterations.length - 1];
     if (state.status === "paused" && last?.verdict === "escalate") {
-      if (ctx.hasUI) ctx.ui.notify("fleet paused: reviewer escalated", "warning");
+      if (ctx.hasUI) ctx.ui.notify(`fleet paused: reviewer escalated; report: ${join(fleet.fleetRoot, "report.md")}`, "warning");
     } else if (ctx.hasUI) {
       ctx.ui.notify(`fleet ${state.status}; report: ${join(fleet.fleetRoot, "report.md")}`, state.status === "completed" ? "info" : "warning");
     }
@@ -392,6 +391,7 @@ export default function (pi: ExtensionAPI) {
     parameters: Type.Object({}),
     async execute(_id, _params, _signal, _onUpdate, ctx) {
       if (!active) return textResult("no fleet planned yet");
+      if (!active.spec.config.loop) return textResult("fleet has no loop; pause is a loop-fleet operation");
       if (!active.running) return textResult("fleet not running");
       active.pauseSwitch.paused = true;
       active.state = { ...active.state, paused: true };
@@ -458,6 +458,10 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       if (cmd === "pause") {
+        if (!active.spec.config.loop) {
+          ctx.ui.notify("fleet has no loop; pause is a loop-fleet operation", "warning");
+          return;
+        }
         if (!active.running) {
           ctx.ui.notify("fleet not running", "warning");
           return;
