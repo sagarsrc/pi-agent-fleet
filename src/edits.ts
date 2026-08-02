@@ -1,4 +1,4 @@
-import { stat, writeFile } from "node:fs/promises";
+import { rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ActiveFleet } from "./controller.js";
 import { resolveModelReference, type ModelRegistryLike } from "./model-resolution.js";
@@ -52,7 +52,9 @@ export async function editNode(
       try {
         await stat(promptPath);
         const prompt = buildWorkerPrompt({ spec: fleet.spec, state: fleet.state, workerId: nodeId, fleetRoot: fleet.fleetRoot });
-        await writeFile(promptPath, prompt, "utf-8");
+        const tmp = join(fleet.fleetRoot, "workers", nodeId, `.prompt.md.${process.pid}.${Date.now()}.tmp`);
+        await writeFile(tmp, prompt, "utf-8");
+        await rename(tmp, promptPath);
       } catch {
         // prompt.md not written yet — nothing to regenerate
       }

@@ -103,9 +103,12 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
         await patch(w.id, { status: "running", started_at: new Date().toISOString() });
         const p = opts.spawn(w.id).then(async (res) => {
           if (opts.killSwitch?.killed) return;
+          if (opts.nodeKills?.has(w.id)) {
+            await patch(w.id, { status: "killed", ended_at: new Date().toISOString(), turns: res.turns, tokens: res.tokens, cost_usd_estimate: res.cost ?? 0 });
+            return;
+          }
           if (!res.ok) {
-            const killed = opts.nodeKills?.has(w.id) === true;
-            await patch(w.id, { status: killed ? "killed" : "failed", ended_at: new Date().toISOString(), turns: res.turns, tokens: res.tokens, cost_usd_estimate: res.cost ?? 0 });
+            await patch(w.id, { status: "failed", ended_at: new Date().toISOString(), turns: res.turns, tokens: res.tokens, cost_usd_estimate: res.cost ?? 0 });
             return;
           }
           const contract = await verifyOutputs({

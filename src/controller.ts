@@ -78,6 +78,11 @@ export function prepareRelaunch(fleet: ActiveFleet, nodeId: string): void {
   fleet.pauseSwitch.paused = false;
 }
 
+export function registerNodeSession(fleet: ActiveFleet, nodeId: string, session: AgentSessionLike): void {
+  fleet.sessions.set(nodeId, session);
+  if (fleet.killedNodes.has(nodeId)) void session.abort().catch(() => {});
+}
+
 export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resume = false, continuePass = false): Promise<void> {
   let resumeFrom: FleetState | undefined;
   try {
@@ -141,7 +146,7 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
           sessionDir,
           thinkingLevel: effort,
           sessionFactory: resolvedModel ? sessionFactoryForModel(resolvedModel) : undefined,
-          onSession: (s) => { fleet.sessions.set(nodeId, s); },
+          onSession: (s) => registerNodeSession(fleet, nodeId, s),
           onEvent: (e) => {
             if (e.type === "turn") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { turns: e.turns });
             if (e.type === "tokens") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { tokens: e.tokens });
@@ -220,7 +225,7 @@ export async function killFleet(target: string): Promise<string> {
   active.killedNodes.add(target);
   const session = active.sessions.get(target);
   if (session) {
-    await session.abort();
+    void session.abort().catch(() => {});
     return `node "${target}" kill requested`;
   }
   if (!active.running) {
@@ -228,5 +233,5 @@ export async function killFleet(target: string): Promise<string> {
     await writeState(active.fleetRoot, active.state);
     return `node "${target}" killed`;
   }
-  return `node "${target}" kill requested (takes effect at next dispatch pass)`;
+  return `node "${target}" kill requested`;
 }

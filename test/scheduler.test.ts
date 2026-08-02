@@ -98,6 +98,20 @@ describe("runFleet", () => {
     expect(spawned).not.toContain("a");
   });
 
+  it("running node killed mid-run ends killed even when spawn succeeds", async () => {
+    const kills = new Set<string>();
+    const s = await runFleet({
+      spec: spec(), fleetRoot: await root(), repoCwd: "/tmp",
+      spawn: async (id) => {
+        if (id === "a") kills.add("a"); // kill lands while a is in flight
+        return { ok: true, turns: 1, tokens: 10 };
+      },
+      nodeKills: kills,
+    });
+    expect(s.nodes.a.status).toBe("killed");
+    expect(s.nodes.b.status).toBe("blocked");
+  });
+
   it("failed spawn of a nodeKills node resolves to killed, not failed", async () => {
     const s = await runFleet({
       spec: spec(), fleetRoot: await root(), repoCwd: "/tmp",

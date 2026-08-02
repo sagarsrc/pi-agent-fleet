@@ -3,7 +3,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { activeFleet, killFleet, prepareRelaunch, startLoop, startSpinner, type ActiveFleet } from "../src/controller.js";
+import { activeFleet, killFleet, prepareRelaunch, registerNodeSession, startLoop, startSpinner, type ActiveFleet } from "../src/controller.js";
 import { initFleetState, patchNode, writeState } from "../src/state.js";
 import type { FleetSpec } from "../src/types.js";
 
@@ -130,11 +130,24 @@ describe("killFleet node targets", () => {
     activeFleet.current = fleet;
     try {
       const msg = await killFleet("a");
+      await new Promise((r) => setImmediate(r));
       expect(aborted).toBe(true);
       expect(fleet.killedNodes.has("a")).toBe(true);
       expect(msg).toContain('node "a" kill requested');
     } finally {
       activeFleet.current = undefined;
     }
+  });
+
+  it("registerNodeSession aborts immediately for killed nodes only", async () => {
+    const fleet = runningFleet();
+    fleet.killedNodes.add("a");
+    let abortedA = false;
+    let abortedB = false;
+    registerNodeSession(fleet, "a", { prompt: async () => {}, abort: async () => { abortedA = true; }, subscribe: () => () => {}, dispose: () => {} });
+    registerNodeSession(fleet, "b", { prompt: async () => {}, abort: async () => { abortedB = true; }, subscribe: () => () => {}, dispose: () => {} });
+    await new Promise((r) => setImmediate(r));
+    expect(abortedA).toBe(true);
+    expect(abortedB).toBe(false);
   });
 });
