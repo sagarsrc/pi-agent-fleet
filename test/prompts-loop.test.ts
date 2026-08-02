@@ -100,6 +100,20 @@ describe("buildWorkerPrompt loop extensions", () => {
     expect(p.indexOf("## Writing your verdict")).toBeLessThan(p.indexOf("## Your output obligations"));
   });
 
+  it("verdict example lines are flush-left", () => {
+    const spec = baseSpec([
+      { id: "reviewer", type: "reviewer", task: "Review", depends_on: ["build"], outputs: [{ path: "output/verdict.md", kind: "verdict", required: true }] },
+      { id: "build", type: "code-run", task: "Build", depends_on: [], outputs: [{ path: "src/x.ts", kind: "file-exists", required: true }] },
+    ]);
+    const state = initFleetState(spec);
+    const p = buildWorkerPrompt({ spec, state, workerId: "reviewer", fleetRoot: "/f" });
+    const lines = p.split("\n");
+    expect(lines).toContain("verdict: lgtm");
+    expect(lines).toContain("verdict: iterate");
+    expect(lines).toContain("verdict: escalate");
+    expect(lines).not.toContain("  verdict: lgtm");
+  });
+
   it("non-verdict worker does not get verdict format instruction", () => {
     const spec = baseSpec([
       { id: "reviewer", type: "reviewer", task: "Review", depends_on: ["build"], outputs: [{ path: "output/verdict.md", kind: "verdict", required: true }] },

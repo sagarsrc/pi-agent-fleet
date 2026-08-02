@@ -1,8 +1,8 @@
 import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
-import type { ContractCheck, ContractOutput, ContractResult } from "./types.js";
+import type { ContractCheck, ContractOutput, ContractResult, Verdict } from "./types.js";
 
-export const VERDICT_RE = /^verdict:\s*(lgtm|iterate|escalate)\s*$/m;
+export const VERDICT_RE = /^verdict:\s*(lgtm|iterate|escalate)\s*$/mi;
 
 function resolvePath(workerDir: string, repoCwd: string, p: string): string {
   if (isAbsolute(p)) return p;
@@ -72,7 +72,7 @@ export async function verifyOutputs(opts: {
   const m = content.match(VERDICT_RE);
   if (!m) return { ok, checks };
 
-  const verdict = m[1] as ContractResult["verdict"];
+  const verdict = m[1].toLowerCase() as Verdict;
   const verdict_body = content.slice(content.indexOf(m[0]) + m[0].length).trim();
   return verdict_body.length > 0 ? { ok, checks, verdict, verdict_body } : { ok, checks };
 }

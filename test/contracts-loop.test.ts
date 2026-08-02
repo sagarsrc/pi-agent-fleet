@@ -47,4 +47,28 @@ describe("verdict extraction", () => {
     expect(r.verdict).toBeUndefined();
     expect(r.verdict_body).toBeUndefined();
   });
+
+  it("accepts case-insensitive verdict keyword and value", async () => {
+    const dir = await fixture("Verdict: LGTM\n\nbody\n");
+    const r = await verifyOutputs({
+      workerDir: dir,
+      repoCwd: dir,
+      outputs: [{ path: "output/review.md", kind: "verdict", required: true }],
+    });
+    expect(r.ok).toBe(true);
+    expect(r.verdict).toBe("lgtm");
+    expect(r.verdict_body).toBe("body");
+  });
+
+  it("normalizes mixed-case verdict value", async () => {
+    const dir = await fixture("VERDICT: Iterate\n\nbody\n");
+    const r = await verifyOutputs({
+      workerDir: dir,
+      repoCwd: dir,
+      outputs: [{ path: "output/review.md", kind: "verdict", required: true }],
+    });
+    expect(r.ok).toBe(true);
+    expect(r.verdict).toBe("iterate");
+    expect(r.verdict_body).toBe("body");
+  });
 });

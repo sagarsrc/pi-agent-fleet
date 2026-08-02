@@ -79,9 +79,9 @@ export function buildWorkerPrompt(opts: {
       "## Writing your verdict",
       "",
       "Your review file MUST start with a verdict line, exactly one of:",
-      "  verdict: lgtm",
-      "  verdict: iterate",
-      "  verdict: escalate",
+      "verdict: lgtm",
+      "verdict: iterate",
+      "verdict: escalate",
       "Below the verdict line, write actionable fix instructions per worker — file path, function name, what to change. A verdict line with no body FAILS the contract. The builders see this body as feedback next iteration, so be specific.",
       "",
     );
