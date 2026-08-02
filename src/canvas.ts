@@ -229,7 +229,6 @@ export interface CanvasServer {
 export async function startCanvasServer(opts: {
   getFleet: () => ActiveFleet | undefined;
   port?: number;
-  host?: string;
 }): Promise<CanvasServer> {
   const server = createServer(async (req, res) => {
     try {
@@ -272,7 +271,7 @@ export async function startCanvasServer(opts: {
       res.end();
     }
   });
-  const host = opts.host ?? "127.0.0.1";
+  const host = "127.0.0.1";
   const port = opts.port ?? 0;
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
