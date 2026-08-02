@@ -13,6 +13,8 @@ export type Verdict = "lgtm" | "iterate" | "escalate";
 
 export type ThinkingLevelName = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
+export const THINKING_LEVELS: readonly ThinkingLevelName[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
 export interface LoopConfig {
   gate: GateKind;
   max_iterations: number;

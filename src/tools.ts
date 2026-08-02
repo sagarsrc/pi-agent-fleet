@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { validateFleetSpec } from "./dag.js";
+import { loadPreferences, mergeFleetConfig } from "./preferences.js";
 import { activeFleet, currentState, dagPreview, killFleet, startLoop, statusText, updateWidget } from "./controller.js";
 import { ensureFleetGitignore, fleetRootFor, isInsideGitRepo, writePlanFiles, writeWorkerPrompts } from "./fleet-store.js";
 import { resolveModelReference, validateFleetModels } from "./model-resolution.js";
@@ -68,7 +69,8 @@ export function registerFleetTools(pi: ExtensionAPI): void {
       fleet: FleetSchema,
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
-      const v = validateFleetSpec(params.fleet);
+      const prefs = await loadPreferences();
+      const v = validateFleetSpec(mergeFleetConfig(params.fleet, prefs));
       if (!v.ok) return textResult(`Invalid fleet:\n${v.errors.join("\n")}`);
 
       const modelCheck = validateFleetModels(v.spec, ctx.modelRegistry);

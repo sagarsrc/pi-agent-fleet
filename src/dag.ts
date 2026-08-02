@@ -1,4 +1,5 @@
 import type { FleetSpec, GateKind, LoopConfig, OutputKind, ThinkingLevelName, WorkerSpec, WorkerType } from "./types.js";
+import { THINKING_LEVELS } from "./types.js";
 
 export class CycleError extends Error {
   constructor(public remaining: string[]) {
@@ -9,7 +10,7 @@ export class CycleError extends Error {
 
 const WORKER_TYPES: WorkerType[] = ["research", "code-run", "reviewer", "write", "read-only"];
 const KINDS: OutputKind[] = ["markdown", "file-exists", "verdict", "json", "yaml"];
-const EFFORTS: ThinkingLevelName[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
 const ID_RE = /^[a-z0-9][a-z0-9-]*$/;
 
 export function topoLayers(spec: FleetSpec): string[][] {
@@ -62,8 +63,8 @@ export function validateFleetSpec(
   if (maxConcurrent < 1) errors.push("config.max_concurrent must be >= 1");
   const model = typeof cfg.model === "string" ? cfg.model : undefined;
   const effort = typeof cfg.effort === "string" ? cfg.effort as ThinkingLevelName : undefined;
-  if (effort !== undefined && !EFFORTS.includes(effort)) {
-    errors.push(`config.effort must be one of ${EFFORTS.join(", ")}`);
+  if (effort !== undefined && !THINKING_LEVELS.includes(effort)) {
+    errors.push(`config.effort must be one of ${THINKING_LEVELS.join(", ")}`);
   }
   const warnCost = typeof cfg.warn_cost_usd === "number" ? cfg.warn_cost_usd : undefined;
 
@@ -92,7 +93,7 @@ export function validateFleetSpec(
       }
     }
     const wEffort = typeof w.effort === "string" ? w.effort as ThinkingLevelName : undefined;
-    if (wEffort !== undefined && !EFFORTS.includes(wEffort)) {
+    if (wEffort !== undefined && !THINKING_LEVELS.includes(wEffort)) {
       errors.push(`worker "${id}": bad effort "${String(w.effort)}"`);
     }
     workers.push({
