@@ -107,4 +107,20 @@ describe("state loop", () => {
     expect(snap.iterations).toHaveLength(1);
     expect(snap.iterations[0].started_at).toBe(replayStart);
   });
+
+  it("snapshotIteration archives costs and zeros live node costs", () => {
+    const state = initFleetState(loopSpec);
+    const nodes = {
+      once: { ...state.nodes.once, status: "completed" as const, cost_usd_estimate: 0.2 },
+      replay: { ...state.nodes.replay, status: "completed" as const, cost_usd_estimate: 0.1 },
+    };
+    const working = { ...state, nodes };
+
+    const snap = snapshotIteration(working, null, null, loopSpec);
+
+    expect(snap.iterations[0].nodes.once.cost_usd_estimate).toBe(0.2);
+    expect(snap.iterations[0].nodes.replay.cost_usd_estimate).toBe(0.1);
+    expect(snap.nodes.once.cost_usd_estimate).toBe(0);
+    expect(snap.nodes.replay.cost_usd_estimate).toBe(0);
+  });
 });

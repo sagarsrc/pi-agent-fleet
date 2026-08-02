@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -15,9 +15,11 @@ function spec(): FleetSpec {
   };
 }
 
-async function root() {
+async function root(spec?: FleetSpec) {
   const r = await mkdtemp(join(tmpdir(), "fleet-sched-cost-"));
-  await mkdir(join(r, "workers", "a", "output"), { recursive: true });
+  for (const w of spec?.workers ?? [{ id: "a" }]) {
+    await mkdir(join(r, "workers", w.id, "output"), { recursive: true });
+  }
   return r;
 }
 
@@ -38,5 +40,37 @@ describe("runFleet cost", () => {
     });
     expect(s.nodes.a.status).toBe("failed");
     expect(s.nodes.a.cost_usd_estimate).toBe(0.01);
+  });
+
+  it("loop with run-once node counts its cost exactly once", async () => {
+    const loopSpec: FleetSpec = {
+      fleet_name: "loop-once",
+      type: "dag",
+      config: { max_concurrent: 1, model: "k2p6", loop: { gate: "none", max_iterations: 2, lgtm_count: 1 } },
+      workers: [
+        { id: "once", type: "code-run", task: "once", depends_on: [], outputs: [{ path: "output/once.md", kind: "markdown", required: true }], iterate: false },
+        { id: "b", type: "code-run", task: "build", depends_on: ["once"], outputs: [{ path: "output/b.md", kind: "markdown", required: true }] },
+      ],
+    };
+    const fleetRoot = await root(loopSpec);
+    const s = await runFleet({
+      spec: loopSpec,
+      fleetRoot,
+      repoCwd: "/tmp",
+      spawn: async (id) => {
+        if (id === "once") {
+          await writeFile(join(fleetRoot, "workers", "once", "output", "once.md"), "# Once\n", "utf-8");
+          return { ok: true, turns: 1, tokens: 5, cost: 0.1 };
+        }
+        await writeFile(join(fleetRoot, "workers", "b", "output", "b.md"), "# Build\n", "utf-8");
+        return { ok: true, turns: 1, tokens: 5, cost: 0.05 };
+      },
+    });
+    expect(s.iterations).toHaveLength(2);
+    expect(s.iterations[0].nodes.once.cost_usd_estimate).toBe(0.1);
+    expect(s.iterations[0].nodes.b.cost_usd_estimate).toBe(0.05);
+    expect(s.iterations[1].nodes.once.cost_usd_estimate).toBe(0);
+    expect(s.iterations[1].nodes.b.cost_usd_estimate).toBe(0.05);
+    expect(s.cost_usd_estimate).toBeCloseTo(0.2, 6);
   });
 });

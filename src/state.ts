@@ -76,7 +76,11 @@ export function snapshotIteration(
     ended_at: now,
     nodes: structuredClone(state.nodes) as Record<string, NodeState>,
   };
-  return { ...state, iterations: [...state.iterations, snapshot] };
+  const zeroed: Record<string, NodeState> = {};
+  for (const [id, n] of Object.entries(state.nodes)) {
+    zeroed[id] = { ...n, cost_usd_estimate: 0 };
+  }
+  return { ...state, nodes: zeroed, iterations: [...state.iterations, snapshot] };
 }
 
 export function resetForIteration(state: FleetState, spec: FleetSpec): FleetState {

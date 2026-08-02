@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initFleetState, patchNode, resetForIteration } from "../src/state.js";
+import { initFleetState, patchNode, resetForIteration, resetForRelaunch, snapshotIteration } from "../src/state.js";
 import type { FleetSpec, IterationSnapshot, NodeState } from "../src/types.js";
 
 const spec: FleetSpec = {
@@ -26,19 +26,23 @@ describe("state cost accumulation", () => {
     expect(s2.cost_usd_estimate).toBeCloseTo(0.15, 6);
   });
 
-  it("resetForIteration preserves archived costs while resetting live iterate nodes", () => {
+  it("resetForRelaunch preserves fleet cost when live costs are already archived", () => {
     const s = initFleetState(spec);
-    const archived: IterationSnapshot = {
-      n: 1, verdict: null, verdict_body: null,
-      started_at: new Date().toISOString(), ended_at: new Date().toISOString(),
-      nodes: {
-        a: { ...s.nodes.a, status: "completed", cost_usd_estimate: 0.2 } as NodeState,
-      },
+    const completed: NodeState = {
+      status: "completed",
+      turns: 1,
+      tokens: 5,
+      cost_usd_estimate: 0.2,
+      produced_outputs: [],
     };
-    const s1 = { ...s, iterations: [archived] };
-    const s2 = resetForIteration(s1, spec);
-    expect(s2.nodes.a.cost_usd_estimate).toBe(0);
-    expect(s2.nodes.b.cost_usd_estimate).toBe(0);
-    expect(s2.cost_usd_estimate).toBeCloseTo(0.2, 6);
+    const s1 = {
+      ...s,
+      nodes: { a: completed, b: { ...completed, cost_usd_estimate: 0.1 } },
+    };
+    const afterSnap = snapshotIteration(s1, null, null, spec);
+    const failed = patchNode("/unused", afterSnap, "a", { status: "failed" });
+    const before = failed.cost_usd_estimate;
+    const r = resetForRelaunch(failed, spec, "a");
+    expect(r.cost_usd_estimate).toBeCloseTo(before, 6);
   });
 });
