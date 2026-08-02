@@ -26,6 +26,15 @@ function allNodesTerminal(state: FleetState, spec: FleetSpec): boolean {
   return spec.workers.every((w) => TERMINAL_NODE_STATUSES.has(state.nodes[w.id].status));
 }
 
+async function cleanReplayOutputs(spec: FleetSpec, fleetRoot: string): Promise<void> {
+  for (const w of spec.workers) {
+    if (w.iterate === false) continue;
+    const outDir = join(fleetRoot, "workers", w.id, "output");
+    await rm(outDir, { recursive: true, force: true });
+    await mkdir(outDir, { recursive: true });
+  }
+}
+
 export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
   const { spec, fleetRoot } = opts;
   const loop = spec.config.loop;
@@ -37,6 +46,7 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
     if (allNodesTerminal(state, spec)) {
       state = resetForIteration(state, spec);
       await writeState(fleetRoot, state);
+      await cleanReplayOutputs(spec, fleetRoot);
     }
   } else {
     state = initFleetState(spec);
@@ -142,12 +152,7 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
     if (n > initialIteration) {
       state = resetForIteration(state, spec);
       await writeState(fleetRoot, state);
-      for (const w of spec.workers) {
-        if (w.iterate === false) continue;
-        const outDir = join(fleetRoot, "workers", w.id, "output");
-        await rm(outDir, { recursive: true, force: true });
-        await mkdir(outDir, { recursive: true });
-      }
+      await cleanReplayOutputs(spec, fleetRoot);
     }
 
     await opts.prepareIteration?.(n, state);

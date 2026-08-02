@@ -259,6 +259,45 @@ describe("runFleet loop", () => {
     expect(s.nodes.b.status).toBe("contract_failed");
   });
 
+  it("cleans replay node output dirs on resume after escalate", async () => {
+    const spec = baseSpec({
+      config: { max_concurrent: 1, model: "k2p6", loop: { gate: "reviewer", max_iterations: 3, lgtm_count: 1 } },
+    });
+    const fleetRoot = await makeRoot(spec);
+
+    const first = await runFleet({
+      spec,
+      fleetRoot,
+      repoCwd: "/tmp",
+      spawn: async (id) => {
+        if (id === "b") {
+          await writeFile(join(fleetRoot, "workers", "b", "output", "b.md"), "# Build\n", "utf-8");
+          return { ok: true, turns: 1, tokens: 5 };
+        }
+        if (id === "r") {
+          await writeFile(join(fleetRoot, "workers", "r", "output", "review.md"), "verdict: escalate\n\nescalating", "utf-8");
+          return { ok: true, turns: 1, tokens: 5 };
+        }
+        throw new Error(`unknown worker ${id}`);
+      },
+    });
+    expect(first.status).toBe("paused");
+
+    const final = await runFleet({
+      spec,
+      fleetRoot,
+      repoCwd: "/tmp",
+      resumeFrom: first,
+      spawn: async (id) => {
+        if (id === "b") return { ok: true, turns: 1, tokens: 5 }; // writes nothing
+        if (id === "r") return { ok: true, turns: 1, tokens: 5 };
+        throw new Error(`unknown worker ${id}`);
+      },
+    });
+    expect(final.status).toBe("failed");
+    expect(final.nodes.b.status).toBe("contract_failed");
+  });
+
   it("resumeFrom after escalate continues with monotonic snapshots and no archive collisions", async () => {
     const spec = baseSpec({
       config: { max_concurrent: 1, model: "k2p6", loop: { gate: "reviewer", max_iterations: 4, lgtm_count: 2 } },
