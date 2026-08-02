@@ -1,4 +1,5 @@
 import { createAgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { WorkerSpec } from "./types.js";
 import { WORKER_TYPE_TOOLS } from "./types.js";
 
@@ -92,4 +93,20 @@ export async function runWorker(opts: RunWorkerOpts): Promise<RunWorkerResult> {
     unsub();
     session.dispose();
   }
+}
+
+export function sessionFactoryForModel(model: Model<Api>): SessionFactory {
+  return async (opts) => {
+    const { session } = await createAgentSession({
+      cwd: opts.cwd,
+      tools: opts.tools,
+      sessionManager: SessionManager.create(opts.cwd, opts.sessionDir),
+      model,
+    });
+    return session as unknown as AgentSessionLike;
+  };
+}
+
+export function workerWithResolvedModel(worker: WorkerSpec, model: Model<Api> | undefined): WorkerSpec {
+  return model ? { ...worker, model: `${model.provider}/${model.id}` } : worker;
 }
