@@ -4,7 +4,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { validateFleetSpec } from "./dag.js";
 import { loadPreferences, mergeFleetConfig } from "./preferences.js";
-import { activeFleet, currentState, dagPreview, killFleet, startLoop, statusText, updateWidget } from "./controller.js";
+import { activeFleet, currentState, dagPreview, killFleet, prepareRelaunch, startLoop, statusText, updateWidget } from "./controller.js";
 import { ensureFleetGitignore, fleetRootFor, isInsideGitRepo, writePlanFiles, writeWorkerPrompts } from "./fleet-store.js";
 import { resolveModelReference, validateFleetModels } from "./model-resolution.js";
 import { writeReport } from "./report.js";
@@ -141,7 +141,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
     name: "fleet_kill",
     label: "Fleet Kill",
     description: "Request a fleet-wide kill (target \"all\") or kill a single node by worker id. Killing a running node aborts its session; killing a pending node marks it killed at the next dispatch pass. Killed nodes can be revived with fleet_relaunch.",
-    promptSnippet: "Kill the active fleet with target \"all\".",
+    promptSnippet: "Kill the whole fleet or a single node by worker id.",
     parameters: Type.Object({ target: Type.String({ description: "all or a worker id" }) }),
     async execute(_id, params) {
       return textResult(await killFleet(params.target));
@@ -216,8 +216,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
       }
       fleet.state = resetForRelaunch(fleet.state, fleet.spec, params.node_id);
       await writeState(fleet.fleetRoot, fleet.state);
-      fleet.killSwitch.killed = false;
-      fleet.pauseSwitch.paused = false;
+      prepareRelaunch(fleet, params.node_id);
       void startLoop(fleet, ctx, false, true);
       return textResult(`fleet relaunch requested for ${params.node_id}`);
     },

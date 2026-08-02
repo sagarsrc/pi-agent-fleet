@@ -3,7 +3,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { activeFleet, killFleet, startLoop, startSpinner, type ActiveFleet } from "../src/controller.js";
+import { activeFleet, killFleet, prepareRelaunch, startLoop, startSpinner, type ActiveFleet } from "../src/controller.js";
 import { initFleetState, patchNode, writeState } from "../src/state.js";
 import type { FleetSpec } from "../src/types.js";
 
@@ -64,6 +64,19 @@ describe("startLoop", () => {
     await startLoop(fleet, ctx, true);
     expect(fleet.running).toBe(false);
     expect(notifications.some((m) => m.startsWith("fleet failed:"))).toBe(true);
+  });
+});
+
+describe("prepareRelaunch", () => {
+  it("clears the node from killedNodes and resets kill/pause switches", () => {
+    const fleet = runningFleet();
+    fleet.killedNodes.add("a");
+    fleet.killSwitch.killed = true;
+    fleet.pauseSwitch.paused = true;
+    prepareRelaunch(fleet, "a");
+    expect(fleet.killedNodes.has("a")).toBe(false);
+    expect(fleet.killSwitch.killed).toBe(false);
+    expect(fleet.pauseSwitch.paused).toBe(false);
   });
 });
 

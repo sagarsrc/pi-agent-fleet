@@ -72,6 +72,12 @@ export async function dagPreview(spec: FleetSpec, state: FleetState | undefined,
   return out;
 }
 
+export function prepareRelaunch(fleet: ActiveFleet, nodeId: string): void {
+  fleet.killedNodes.delete(nodeId);
+  fleet.killSwitch.killed = false;
+  fleet.pauseSwitch.paused = false;
+}
+
 export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resume = false, continuePass = false): Promise<void> {
   let resumeFrom: FleetState | undefined;
   try {
@@ -126,28 +132,30 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
       const prompt = await readFile(join(fleet.fleetRoot, "workers", nodeId, "prompt.md"), "utf-8");
       const sessionDir = join(fleet.fleetRoot, "workers", nodeId);
       const effort = worker.effort ?? fleet.spec.config.effort ?? "medium";
-      const res = await runWorker({
-        nodeId,
-        worker: workerWithResolvedModel(worker, resolvedModel),
-        prompt,
-        repoCwd: ctx.cwd,
-        sessionDir,
-        thinkingLevel: effort,
-        sessionFactory: resolvedModel ? sessionFactoryForModel(resolvedModel) : undefined,
-        onSession: (s) => { fleet.sessions.set(nodeId, s); },
-        onEvent: (e) => {
-          if (e.type === "turn") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { turns: e.turns });
-          if (e.type === "tokens") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { tokens: e.tokens });
-          if (e.type === "cost") {
-            fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { cost_usd_estimate: e.cost });
-            checkCostWarning();
-          }
-          if (e.type === "error") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { status_note: e.message });
-          updateWidget(ctx, fleet);
-        },
-      });
-      fleet.sessions.delete(nodeId);
-      return res;
+      try {
+        return await runWorker({
+          nodeId,
+          worker: workerWithResolvedModel(worker, resolvedModel),
+          prompt,
+          repoCwd: ctx.cwd,
+          sessionDir,
+          thinkingLevel: effort,
+          sessionFactory: resolvedModel ? sessionFactoryForModel(resolvedModel) : undefined,
+          onSession: (s) => { fleet.sessions.set(nodeId, s); },
+          onEvent: (e) => {
+            if (e.type === "turn") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { turns: e.turns });
+            if (e.type === "tokens") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { tokens: e.tokens });
+            if (e.type === "cost") {
+              fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { cost_usd_estimate: e.cost });
+              checkCostWarning();
+            }
+            if (e.type === "error") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { status_note: e.message });
+            updateWidget(ctx, fleet);
+          },
+        });
+      } finally {
+        fleet.sessions.delete(nodeId);
+      }
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       return { ok: false, turns: 0, tokens: 0, error };

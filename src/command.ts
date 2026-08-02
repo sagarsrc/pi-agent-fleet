@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { activeFleet, currentState, killFleet, startLoop, updateWidget } from "./controller.js";
+import { activeFleet, currentState, killFleet, prepareRelaunch, startLoop, updateWidget } from "./controller.js";
 import { resolveModelReference } from "./model-resolution.js";
 import { clearPreference, loadPreferences, PREFERENCE_KEYS, savePreferences, setPreference } from "./preferences.js";
 import { resetForRelaunch, writeState } from "./state.js";
@@ -83,7 +83,8 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
       }
       if (cmd === "kill") {
         const text = await killFleet(target ?? "");
-        ctx.ui.notify(text, text === "fleet kill requested" ? "warning" : "error");
+        const severity = text.includes("kill") && !text.startsWith("unknown") && !text.includes("already") ? "warning" : "error";
+        ctx.ui.notify(text, severity);
         return;
       }
       if (cmd === "pause") {
@@ -154,8 +155,7 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
         }
         active.state = resetForRelaunch(active.state, active.spec, target);
         await writeState(active.fleetRoot, active.state);
-        active.killSwitch.killed = false;
-        active.pauseSwitch.paused = false;
+        prepareRelaunch(active, target);
         void startLoop(active, ctx, false, true);
         ctx.ui.notify(`fleet relaunch requested for ${target}`, "info");
         return;
