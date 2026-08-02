@@ -125,6 +125,8 @@ export function validateFleetSpec(
           errors.push("loop.lgtm_count must be an integer >= 1");
         } else if (gate === "none") {
           errors.push("loop.lgtm_count is not allowed with gate none");
+        } else if (typeof maxIterations === "number" && Number.isInteger(maxIterations) && maxIterations >= 1 && lgtmCount > maxIterations) {
+          errors.push("loop.lgtm_count must be <= max_iterations");
         }
       }
       if (gate === "reviewer" && typeof maxIterations === "number" && Number.isInteger(maxIterations) && maxIterations >= 1) {
@@ -142,6 +144,9 @@ export function validateFleetSpec(
             }
           }
         }
+      }
+      if (gate === "none" && workers.every((w) => w.iterate === false)) {
+        errors.push("gate none requires at least one replay node (iterate: false on all nodes makes the loop a no-op)");
       }
       if (errors.length === 0) {
         loopConfig = {

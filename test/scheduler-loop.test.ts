@@ -236,6 +236,29 @@ describe("runFleet loop", () => {
     expect(snaps[1].n).toBe(2);
   });
 
+  it("cleans replay node output dirs between iterations", async () => {
+    const spec = baseSpec({
+      config: { max_concurrent: 1, model: "k2p6", loop: { gate: "none", max_iterations: 2, lgtm_count: 1 } },
+      workers: [{ id: "b", type: "code-run", task: "build", depends_on: [], outputs: [{ path: "output/b.md", kind: "markdown", required: true }] }],
+    });
+    const fleetRoot = await makeRoot(spec);
+    let calls = 0;
+    const s = await runFleet({
+      spec,
+      fleetRoot,
+      repoCwd: "/tmp",
+      spawn: async (id) => {
+        calls++;
+        if (id === "b" && calls === 1) {
+          await writeFile(join(fleetRoot, "workers", "b", "output", "b.md"), "# Build\n", "utf-8");
+        }
+        return { ok: true, turns: 1, tokens: 5 };
+      },
+    });
+    expect(s.status).toBe("failed");
+    expect(s.nodes.b.status).toBe("contract_failed");
+  });
+
   it("resumeFrom after escalate continues with monotonic snapshots and no archive collisions", async () => {
     const spec = baseSpec({
       config: { max_concurrent: 1, model: "k2p6", loop: { gate: "reviewer", max_iterations: 4, lgtm_count: 2 } },

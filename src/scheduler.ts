@@ -1,3 +1,5 @@
+import { mkdir, rm } from "node:fs/promises";
+import { join } from "node:path";
 import { verifyOutputs } from "./contracts.js";
 import { archiveIteration, initFleetState, patchNode, resetForIteration, snapshotIteration, writeState } from "./state.js";
 import { TERMINAL_NODE_STATUSES } from "./types.js";
@@ -140,6 +142,12 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
     if (n > initialIteration) {
       state = resetForIteration(state, spec);
       await writeState(fleetRoot, state);
+      for (const w of spec.workers) {
+        if (w.iterate === false) continue;
+        const outDir = join(fleetRoot, "workers", w.id, "output");
+        await rm(outDir, { recursive: true, force: true });
+        await mkdir(outDir, { recursive: true });
+      }
     }
 
     await opts.prepareIteration?.(n, state);
@@ -154,7 +162,7 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
       verdictBody = cr?.verdict_body ?? null;
     }
 
-    state = snapshotIteration(state, verdict, verdictBody);
+    state = snapshotIteration(state, verdict, verdictBody, spec);
     const snap = state.iterations[state.iterations.length - 1];
     opts.onIterationEnd?.(snap);
     await archiveIteration(fleetRoot, state.iteration, spec.workers.map((w) => w.id));

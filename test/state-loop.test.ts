@@ -91,4 +91,20 @@ describe("state loop", () => {
     const archivedPrompt = await readFile(join(root, "iterations", "1", "workers", "a-prompt.md"), "utf-8");
     expect(archivedPrompt).toBe("prompt");
   });
+
+  it("snapshotIteration uses earliest started_at from replay nodes when spec is provided", () => {
+    const state = initFleetState(loopSpec);
+    const onceStart = new Date(Date.now() - 600000).toISOString();
+    const replayStart = new Date(Date.now() - 10000).toISOString();
+    const nodes = {
+      once: { ...state.nodes.once, status: "completed" as const, started_at: onceStart, ended_at: new Date().toISOString() },
+      replay: { ...state.nodes.replay, status: "completed" as const, started_at: replayStart, ended_at: new Date().toISOString() },
+    };
+    const working = { ...state, nodes };
+
+    const snap = snapshotIteration(working, null, null, loopSpec);
+
+    expect(snap.iterations).toHaveLength(1);
+    expect(snap.iterations[0].started_at).toBe(replayStart);
+  });
 });

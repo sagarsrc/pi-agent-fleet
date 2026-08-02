@@ -126,4 +126,26 @@ describe("loop validation", () => {
       expect(v.spec.workers.every((w) => w.iterate === true && w.worktree === false)).toBe(true);
     }
   });
+
+  it("rejects lgtm_count greater than max_iterations", () => {
+    const v = validateFleetSpec(baseSpec({ config: { max_concurrent: 1, model: "m", loop: { gate: "reviewer", max_iterations: 2, lgtm_count: 3 } } }));
+    expect(v.ok).toBe(false);
+    if (!v.ok) expect(v.errors.join("\n")).toMatch(/lgtm_count must be <= max_iterations/);
+  });
+
+  it("allows lgtm_count equal to max_iterations", () => {
+    const v = validateFleetSpec(baseSpec({ config: { max_concurrent: 1, model: "m", loop: { gate: "reviewer", max_iterations: 3, lgtm_count: 3 } } }));
+    expect(v.ok).toBe(true);
+  });
+
+  it("rejects gate none with all run-once nodes", () => {
+    const v = validateFleetSpec(baseSpec({
+      config: { max_concurrent: 1, model: "m", loop: { gate: "none", max_iterations: 3 } },
+      workers: [
+        { id: "b", type: "code-run", task: "t", depends_on: [], outputs: [{ path: "output/b.md", kind: "markdown", required: true }], iterate: false },
+      ],
+    }));
+    expect(v.ok).toBe(false);
+    if (!v.ok) expect(v.errors.join("\n")).toMatch(/gate none requires at least one replay node/);
+  });
 });

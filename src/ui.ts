@@ -12,7 +12,8 @@ export function buildWidgetLines(spec: FleetSpec, state: FleetState): string[] {
   if (loop) {
     const lgtmCount = loop.lgtm_count ?? 1;
     const lastVerdict = state.iterations.length > 0 ? state.iterations[state.iterations.length - 1].verdict : null;
-    header = `● fleet: ${spec.fleet_name} · iteration ${state.iteration}/${loop.max_iterations} · last verdict: ${lastVerdict ?? "—"} · streak ${state.lgtm_streak}/${lgtmCount} (${done}/${spec.workers.length} done · $${state.cost_usd_estimate.toFixed(2)})`;
+    const streakSegment = loop.gate === "reviewer" ? ` · streak ${state.lgtm_streak}/${lgtmCount}` : "";
+    header = `● fleet: ${spec.fleet_name} · iteration ${state.iteration}/${loop.max_iterations} · last verdict: ${lastVerdict ?? "—"}${streakSegment} (${done}/${spec.workers.length} done · $${state.cost_usd_estimate.toFixed(2)})`;
   } else {
     header = `● fleet: ${spec.fleet_name}  (${done}/${spec.workers.length} done · $${state.cost_usd_estimate.toFixed(2)})`;
   }

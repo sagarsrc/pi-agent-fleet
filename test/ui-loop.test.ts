@@ -84,4 +84,16 @@ describe("buildWidgetLines loop", () => {
     const lines = buildWidgetLines(oneShotSpec, state);
     expect(lines[0]).toBe("● fleet: t  (0/2 done · $0.00)");
   });
+
+  it("gate none loop header omits streak", () => {
+    const gateNoneSpec: FleetSpec = {
+      ...loopSpec,
+      config: { ...loopSpec.config, loop: { gate: "none", max_iterations: 5, lgtm_count: 1 } },
+    };
+    const state = loopStateWithSnapshots();
+    const lines = buildWidgetLines(gateNoneSpec, state);
+    expect(lines[0]).toContain("iteration 2/5");
+    expect(lines[0]).toContain("last verdict: iterate");
+    expect(lines[0]).not.toContain("streak");
+  });
 });

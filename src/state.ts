@@ -46,12 +46,19 @@ export function snapshotIteration(
   state: FleetState,
   verdict: Verdict | null,
   verdictBody: string | null,
+  spec?: FleetSpec,
 ): FleetState {
   const now = new Date().toISOString();
-  const startedAts = Object.values(state.nodes)
-    .map((n) => n.started_at)
-    .filter((s): s is string => !!s)
-    .sort();
+  const startedAts = spec
+    ? spec.workers
+        .filter((w) => w.iterate !== false)
+        .map((w) => state.nodes[w.id]?.started_at)
+        .filter((s): s is string => !!s)
+        .sort()
+    : Object.values(state.nodes)
+        .map((n) => n.started_at)
+        .filter((s): s is string => !!s)
+        .sort();
   const snapshot: IterationSnapshot = {
     n: state.iteration,
     verdict,
