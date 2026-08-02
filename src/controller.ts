@@ -103,7 +103,10 @@ export async function drainNodeRequests(
     return `node-requests.json invalid JSON: ${(e as Error).message}`;
   }
   const r = await insertWorkers(fleet, parsed, registry);
-  if (!r.ok) return `node-requests rejected: ${r.message.split("\n")[0]}`;
+  if (!r.ok) {
+    const detail = r.message.replace("invalid node insertion:\n", "").split("\n")[0];
+    return `node-requests rejected: ${detail}`;
+  }
   return undefined;
 }
 
@@ -204,11 +207,20 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
       pauseSwitch: fleet.pauseSwitch,
       nodeKills: fleet.killedNodes,
       onNodeChange: (nodeId, nodeState) => {
-        fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, nodeState);
+        fleet.state = fleet.state.nodes[nodeId]
+          ? patchNode(fleet.fleetRoot, fleet.state, nodeId, nodeState)
+          : { ...fleet.state, nodes: { ...fleet.state.nodes, [nodeId]: nodeState } };
         checkCostWarning();
         updateWidget(ctx, fleet);
       },
-      onNodeAdded: () => {
+      onNodeAdded: (w) => {
+        fleet.state = {
+          ...fleet.state,
+          nodes: {
+            ...fleet.state.nodes,
+            [w.id]: { status: "pending", turns: 0, tokens: 0, cost_usd_estimate: 0, produced_outputs: [] },
+          },
+        };
         updateWidget(ctx, fleet);
       },
       onNodeCompleted: async (nodeId) => {

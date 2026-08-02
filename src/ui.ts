@@ -18,7 +18,7 @@ export interface WidgetOpts {
 
 export function buildWidgetLines(spec: FleetSpec, state: FleetState, opts: WidgetOpts = {}): string[] {
   const maxLines = Math.max(opts.maxLines ?? DEFAULT_MAX_LINES, 3);
-  const done = spec.workers.filter((w) => state.nodes[w.id].status === "completed").length;
+  const done = spec.workers.filter((w) => state.nodes[w.id]?.status === "completed").length;
   const loop = spec.config.loop;
   let header: string;
   if (loop) {
@@ -36,7 +36,7 @@ export function buildWidgetLines(spec: FleetSpec, state: FleetState, opts: Widge
       : ICON[s];
 
   const line = (w: WorkerSpec, branch: string): string => {
-    const n: NodeState = state.nodes[w.id];
+    const n: NodeState = state.nodes[w.id] ?? { status: "pending", turns: 0, tokens: 0, cost_usd_estimate: 0, produced_outputs: [] };
     const detail = DETAIL_STATUSES.has(n.status)
       ? ` · ${n.turns} turns · ${(n.tokens / 1000).toFixed(1)}k tok · $${n.cost_usd_estimate.toFixed(2)}`
       : "";
@@ -54,8 +54,8 @@ export function buildWidgetLines(spec: FleetSpec, state: FleetState, opts: Widge
     return lines;
   }
 
-  const attention = spec.workers.filter((w) => ATTENTION_STATUSES.has(state.nodes[w.id].status));
-  const rest = spec.workers.filter((w) => !ATTENTION_STATUSES.has(state.nodes[w.id].status));
+  const attention = spec.workers.filter((w) => ATTENTION_STATUSES.has(state.nodes[w.id]?.status ?? "pending"));
+  const rest = spec.workers.filter((w) => !ATTENTION_STATUSES.has(state.nodes[w.id]?.status ?? "pending"));
   const visible = [...attention, ...rest].slice(0, Math.max(budget - 1, 1));
   const hidden = spec.workers.length - visible.length;
   const lines = [header, ...visible.map((w) => line(w, "├─"))];

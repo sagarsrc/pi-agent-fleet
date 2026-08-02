@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { runFleet } from "../src/scheduler.js";
+import { patchNode, initFleetState } from "../src/state.js";
+import { buildWidgetLines } from "../src/ui.js";
 import type { FleetSpec } from "../src/types.js";
 
 function spec(): FleetSpec {
@@ -156,5 +158,28 @@ describe("runFleet", () => {
       },
     });
     expect(s.nodes.c.status).toBe("completed");
+  });
+
+  it("mirror state and widget tolerate mid-run spec growth", async () => {
+    const sp = spec();
+    let mirror = initFleetState(sp);
+    const s = await runFleet({
+      spec: sp, fleetRoot: await root(), repoCwd: "/tmp",
+      spawn: async (id) => {
+        if (id === "a") sp.workers.push({ id: "c", type: "write", task: "t", depends_on: ["a"], outputs: [] });
+        return { ok: true, turns: 1, tokens: 10 };
+      },
+      onNodeAdded: (w) => {
+        mirror = { ...mirror, nodes: { ...mirror.nodes, [w.id]: { status: "pending", turns: 0, tokens: 0, cost_usd_estimate: 0, produced_outputs: [] } } };
+      },
+      onNodeChange: (nodeId, nodeState) => {
+        mirror = mirror.nodes[nodeId]
+          ? patchNode("/x", mirror, nodeId, nodeState)
+          : { ...mirror, nodes: { ...mirror.nodes, [nodeId]: nodeState } };
+        buildWidgetLines(sp, mirror); // must not throw at any point
+      },
+    });
+    expect(s.nodes.c.status).toBe("completed");
+    expect(mirror.nodes.c.status).toBe("completed");
   });
 });

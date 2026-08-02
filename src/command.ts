@@ -163,9 +163,9 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
         return;
       }
       if (cmd === "add") {
-        const body = args.trim().split(/\s+/).slice(1).join(" ");
+        const body = args.trim().replace(/^add\s*/, "");
         if (!body) {
-          ctx.ui.notify('usage: /fleet add \'{"workers": [{"id": "x", "type": "research", "task": "...", "depends_on": []}]}\'', "warning");
+          ctx.ui.notify("usage: /fleet add <json>", "warning");
           return;
         }
         let parsed: unknown;

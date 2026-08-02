@@ -99,4 +99,10 @@ describe("widget stats, truncation, spinner", () => {
     const lines = buildWidgetLines(many, initFleetState(many), { maxLines: 2 });
     expect(lines.length).toBe(3);
   });
+
+  it("renders nodes missing from state as pending without throwing", () => {
+    const grown: FleetSpec = { ...spec, workers: [...spec.workers, { id: "c", type: "write", task: "t", depends_on: ["b"], outputs: [] }] };
+    const lines = buildWidgetLines(grown, initFleetState(spec)); // state lacks c
+    expect(lines.some((l) => l.includes("○ c"))).toBe(true);
+  });
 });

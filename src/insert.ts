@@ -14,12 +14,12 @@ export interface InsertResult {
 
 async function persistFleetJson(fleet: ActiveFleet): Promise<void> {
   const path = join(fleet.fleetRoot, "fleet.json");
-  const tmp = join(fleet.fleetRoot, `.fleet.json.${process.pid}.${Date.now()}.tmp`);
+  const tmp = join(fleet.fleetRoot, `.fleet.json.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`);
   await writeFile(tmp, `${JSON.stringify(fleet.spec, null, 2)}\n`, "utf-8");
   await rename(tmp, path);
 }
 
-export async function insertWorkers(
+async function insertWorkersSerialized(
   fleet: ActiveFleet,
   raw: unknown,
   registry: ModelRegistryLike,
@@ -66,7 +66,25 @@ export async function insertWorkers(
     return { ok: false, message: `insert failed: ${e instanceof Error ? e.message : String(e)}` };
   }
   fleet.spec.workers.push(...fresh);
-  await persistFleetJson(fleet);
+  try {
+    await persistFleetJson(fleet);
+  } catch (e: unknown) {
+    fleet.spec.workers.length -= fresh.length;
+    return { ok: false, message: `insert failed: ${e instanceof Error ? e.message : String(e)}` };
+  }
   const ids = fresh.map((w) => w.id);
   return { ok: true, message: `inserted ${ids.join(", ")}`, inserted: ids };
+}
+
+const insertQueues = new WeakMap<ActiveFleet, Promise<unknown>>();
+
+export async function insertWorkers(
+  fleet: ActiveFleet,
+  raw: unknown,
+  registry: ModelRegistryLike,
+): Promise<InsertResult> {
+  const prev = insertQueues.get(fleet) ?? Promise.resolve();
+  const run = prev.then(() => insertWorkersSerialized(fleet, raw, registry));
+  insertQueues.set(fleet, run.catch(() => {}));
+  return run;
 }
