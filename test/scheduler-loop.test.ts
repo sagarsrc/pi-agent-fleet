@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { runFleet } from "../src/scheduler.js";
-import type { FleetSpec, IterationSnapshot } from "../src/types.js";
+import type { FleetSpec, FleetState, IterationSnapshot } from "../src/types.js";
 
 function baseSpec(over: Partial<FleetSpec> = {}): FleetSpec {
   return {
@@ -330,5 +330,56 @@ describe("runFleet loop", () => {
     for (const it of final.iterations) {
       await stat(join(fleetRoot, "iterations", String(it.n), "workers", "b", "output", "b.md"));
     }
+  });
+
+  it("resumeFrom clears paused state and proceeds when pauseSwitch is false", async () => {
+    const spec = baseSpec();
+    const fleetRoot = await makeRoot(spec);
+    const snap: IterationSnapshot = {
+      n: 1,
+      verdict: "lgtm",
+      verdict_body: "ok",
+      started_at: new Date(Date.now() - 1000).toISOString(),
+      ended_at: new Date().toISOString(),
+      nodes: {
+        b: { status: "completed", turns: 1, tokens: 5, cost_usd_estimate: 0.05, produced_outputs: ["output/b.md"] },
+        r: { status: "completed", turns: 1, tokens: 5, cost_usd_estimate: 0.05, produced_outputs: ["output/review.md"], contract_result: { ok: true, checks: [], verdict: "lgtm" } },
+      },
+    };
+    const initial: FleetState = {
+      fleet_name: spec.fleet_name,
+      status: "paused",
+      created_at: new Date().toISOString(),
+      cost_usd_estimate: 0.1,
+      nodes: snap.nodes,
+      iteration: 2,
+      lgtm_streak: 1,
+      paused: true,
+      iterations: [snap],
+    };
+
+    const final = await runFleet({
+      spec,
+      fleetRoot,
+      repoCwd: "/tmp",
+      resumeFrom: initial,
+      pauseSwitch: { paused: false },
+      spawn: async (id) => {
+        if (id === "b") {
+          await writeFile(join(fleetRoot, "workers", "b", "output", "b.md"), "# Build\n", "utf-8");
+          return { ok: true, turns: 1, tokens: 5 };
+        }
+        if (id === "r") {
+          await writeFile(join(fleetRoot, "workers", "r", "output", "review.md"), "verdict: lgtm\n\nbody", "utf-8");
+          return { ok: true, turns: 1, tokens: 5 };
+        }
+        throw new Error(`unknown worker ${id}`);
+      },
+    });
+
+    expect(final.status).toBe("completed");
+    expect(final.paused).toBe(false);
+    expect(final.iteration).toBe(3);
+    expect(final.lgtm_streak).toBe(2);
   });
 });

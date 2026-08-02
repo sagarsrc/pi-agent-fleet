@@ -163,4 +163,81 @@ describe("runFleet relaunch", () => {
     expect(final.nodes.r.status).toBe("completed");
     await expect(readFile(join(fleetRoot, "workers", "b", "output", "stale.txt"), "utf-8")).resolves.toBe("stale");
   });
+
+  it("relaunch with a stale killed switch kills reset nodes", async () => {
+    const spec = oneShotSpec();
+    const fleetRoot = await root(spec);
+    const initial: FleetState = {
+      fleet_name: spec.fleet_name,
+      status: "failed",
+      created_at: new Date().toISOString(),
+      cost_usd_estimate: 0,
+      nodes: {
+        a: { status: "failed", turns: 1, tokens: 5, cost_usd_estimate: 0, produced_outputs: [] },
+        b: { status: "blocked", turns: 0, tokens: 0, cost_usd_estimate: 0, produced_outputs: [] },
+        c: { status: "completed", turns: 1, tokens: 5, cost_usd_estimate: 0.05, produced_outputs: ["output/c.md"] },
+      },
+      iteration: 1,
+      lgtm_streak: 0,
+      paused: false,
+      iterations: [],
+    };
+
+    const patched = resetForRelaunch(initial, spec, "a");
+    const staleKillSwitch = { killed: true };
+    const s = await runFleet({
+      spec,
+      fleetRoot,
+      repoCwd: "/tmp",
+      resumeFrom: patched,
+      continuePass: true,
+      killSwitch: staleKillSwitch,
+      spawn: async () => ({ ok: true, turns: 1, tokens: 5 }),
+    });
+
+    expect(s.status).toBe("killed");
+    expect(s.nodes.a.status).toBe("killed");
+    expect(s.nodes.b.status).toBe("killed");
+    expect(s.nodes.c.status).toBe("completed");
+  });
+
+  it("relaunch succeeds when killed switch is cleared", async () => {
+    const spec = oneShotSpec();
+    const fleetRoot = await root(spec);
+    const initial: FleetState = {
+      fleet_name: spec.fleet_name,
+      status: "failed",
+      created_at: new Date().toISOString(),
+      cost_usd_estimate: 0,
+      nodes: {
+        a: { status: "failed", turns: 1, tokens: 5, cost_usd_estimate: 0, produced_outputs: [] },
+        b: { status: "blocked", turns: 0, tokens: 0, cost_usd_estimate: 0, produced_outputs: [] },
+        c: { status: "completed", turns: 1, tokens: 5, cost_usd_estimate: 0.05, produced_outputs: ["output/c.md"] },
+      },
+      iteration: 1,
+      lgtm_streak: 0,
+      paused: false,
+      iterations: [],
+    };
+
+    const patched = resetForRelaunch(initial, spec, "a");
+    const s = await runFleet({
+      spec,
+      fleetRoot,
+      repoCwd: "/tmp",
+      resumeFrom: patched,
+      continuePass: true,
+      killSwitch: { killed: false },
+      spawn: async (id) => {
+        if (id === "a") await writeFile(join(fleetRoot, "workers", "a", "output", "a.md"), "# A\n", "utf-8");
+        if (id === "b") await writeFile(join(fleetRoot, "workers", "b", "output", "b.md"), "# B\n", "utf-8");
+        return { ok: true, turns: 1, tokens: 5 };
+      },
+    });
+
+    expect(s.status).toBe("completed");
+    expect(s.nodes.a.status).toBe("completed");
+    expect(s.nodes.b.status).toBe("completed");
+    expect(s.nodes.c.status).toBe("completed");
+  });
 });

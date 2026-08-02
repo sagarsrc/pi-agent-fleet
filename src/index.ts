@@ -473,6 +473,8 @@ export default function (pi: ExtensionAPI) {
       }
       fleet.state = resetForRelaunch(fleet.state, fleet.spec, params.node_id);
       await writeState(fleet.fleetRoot, fleet.state);
+      fleet.killSwitch.killed = false;
+      fleet.pauseSwitch.paused = false;
       void startLoop(fleet, ctx, false, true);
       return textResult(`fleet relaunch requested for ${params.node_id}`);
     },
@@ -586,6 +588,8 @@ export default function (pi: ExtensionAPI) {
         }
         active.state = resetForRelaunch(active.state, active.spec, target);
         await writeState(active.fleetRoot, active.state);
+        active.killSwitch.killed = false;
+        active.pauseSwitch.paused = false;
         void startLoop(active, ctx, false, true);
         ctx.ui.notify(`fleet relaunch requested for ${target}`, "info");
         return;
