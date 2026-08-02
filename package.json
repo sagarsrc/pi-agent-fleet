@@ -1,7 +1,7 @@
 {
-  "name": "pi-fleet-extension",
-  "version": "0.1.0",
-  "description": "DAG-of-agents fleet extension for pi",
+  "name": "pi-fleet",
+  "version": "0.2.0",
+  "description": "DAG-of-agents fleets for pi \u2014 parallel workers with contracts, reviewer-gated iteration loops, and live progress",
   "type": "module",
   "scripts": {
     "test": "vitest run",
@@ -9,11 +9,9 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.80.0",
-    "@earendil-works/pi-ai": ">=0.80.0"
-  },
-  "dependencies": {
-    "@sinclair/typebox": "^0.34.0"
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*",
+    "typebox": "*"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.80.0",
@@ -23,6 +21,32 @@
     "@types/node": "^22.0.0"
   },
   "pi": {
-    "extensions": ["./src/index.ts"]
-  }
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "license": "MIT",
+  "author": "Sagar Sarkale",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sagarsrc/pi-fleet.git"
+  },
+  "bugs": "https://github.com/sagarsrc/pi-fleet/issues",
+  "homepage": "https://github.com/sagarsrc/pi-fleet#readme",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi-coding-agent",
+    "agents",
+    "multi-agent",
+    "dag",
+    "fleet",
+    "orchestration"
+  ],
+  "files": [
+    "src/",
+    "examples/",
+    "README.md",
+    "LICENSE"
+  ]
 }
