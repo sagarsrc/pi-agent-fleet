@@ -5,7 +5,8 @@ import { Type } from "typebox";
 import { validateFleetSpec } from "./dag.js";
 import { insertWorkers } from "./insert.js";
 import { loadPreferences, mergeFleetConfig } from "./preferences.js";
-import { activeFleet, currentState, dagPreview, killFleet, prepareRelaunch, startLoop, statusText, updateWidget } from "./controller.js";
+import { activeFleet, currentState, dagPreview, ensureCanvas, killFleet, prepareRelaunch, startLoop, statusText, stopCanvas, updateWidget } from "./controller.js";
+import { openInBrowser } from "./canvas.js";
 import { editConfig, editNode, type ConfigEditKey, type NodeEditKey } from "./edits.js";
 import { ensureFleetGitignore, fleetRootFor, isInsideGitRepo, writePlanFiles, writeWorkerPrompts } from "./fleet-store.js";
 import { resolveModelReference, validateFleetModels } from "./model-resolution.js";
@@ -315,6 +316,26 @@ export function registerFleetTools(pi: ExtensionAPI): void {
         : await editConfig(active, params.key as ConfigEditKey, params.value, ctx.modelRegistry);
       if (r.ok) updateWidget(ctx, active);
       return textResult(r.message);
+    },
+  });
+
+  pi.registerTool({
+    name: "fleet_canvas",
+    label: "Fleet Canvas",
+    description: "Open a local browser canvas for the active fleet: live DAG with per-node stats and a click-to-peek view of each node's recent agent session. Read-only, binds 127.0.0.1 on an ephemeral port. action 'url' (default) returns the URL without opening a browser; 'open' opens it; 'stop' shuts the server down.",
+    promptSnippet: "Open the fleet browser canvas.",
+    parameters: Type.Object({
+      action: Type.Optional(Type.Union([Type.Literal("open"), Type.Literal("stop"), Type.Literal("url")])),
+    }),
+    async execute(_id, params) {
+      const action = params.action ?? "url";
+      if (action === "stop") {
+        await stopCanvas();
+        return textResult("fleet canvas stopped");
+      }
+      const server = await ensureCanvas();
+      if (action === "open") await openInBrowser(server.url);
+      return textResult(`fleet canvas: ${server.url}`, { url: server.url });
     },
   });
 }

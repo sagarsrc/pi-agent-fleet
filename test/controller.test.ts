@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { activeFleet, drainNodeRequests, killFleet, prepareRelaunch, registerNodeSession, startLoop, startSpinner, type ActiveFleet } from "../src/controller.js";
+import { activeFleet, drainNodeRequests, ensureCanvas, killFleet, prepareRelaunch, registerNodeSession, startLoop, startSpinner, stopCanvas, type ActiveFleet } from "../src/controller.js";
 import { initFleetState, patchNode, writeState } from "../src/state.js";
 import type { FleetSpec } from "../src/types.js";
 
@@ -149,6 +149,31 @@ describe("killFleet node targets", () => {
     await new Promise((r) => setImmediate(r));
     expect(abortedA).toBe(true);
     expect(abortedB).toBe(false);
+  });
+});
+
+describe("canvas lifecycle", () => {
+  it("ensureCanvas returns a singleton and stopCanvas tears it down", async () => {
+    const a = await ensureCanvas();
+    const b = await ensureCanvas();
+    expect(a).toBe(b);
+    expect(a.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+    await stopCanvas();
+    const c = await ensureCanvas();
+    expect(c).not.toBe(a);
+    await stopCanvas();
+  });
+
+  it("serves the active fleet through the cell", async () => {
+    const server = await ensureCanvas();
+    activeFleet.current = runningFleet();
+    try {
+      const state = await (await fetch(`${server.url}/api/state`)).json();
+      expect(state.fleet_name).toBe("t");
+    } finally {
+      activeFleet.current = undefined;
+      await stopCanvas();
+    }
   });
 });
 
