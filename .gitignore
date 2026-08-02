@@ -2,3 +2,4 @@ node_modules/
 .fleet/
 dist/
 .superpowers/
+.worktrees/
