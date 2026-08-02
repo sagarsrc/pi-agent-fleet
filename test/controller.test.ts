@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { activeFleet, killFleet, prepareRelaunch, registerNodeSession, startLoop, startSpinner, type ActiveFleet } from "../src/controller.js";
+import { activeFleet, drainNodeRequests, killFleet, prepareRelaunch, registerNodeSession, startLoop, startSpinner, type ActiveFleet } from "../src/controller.js";
 import { initFleetState, patchNode, writeState } from "../src/state.js";
 import type { FleetSpec } from "../src/types.js";
 
@@ -149,5 +149,38 @@ describe("killFleet node targets", () => {
     await new Promise((r) => setImmediate(r));
     expect(abortedA).toBe(true);
     expect(abortedB).toBe(false);
+  });
+});
+
+describe("node request sideband", () => {
+  it("inserts workers requested by a completed node", async () => {
+    const fleetRoot = await mkdtemp(join(tmpdir(), "fleet-sideband-"));
+    const fleet = runningFleet();
+    fleet.fleetRoot = fleetRoot;
+    await mkdir(join(fleetRoot, "workers", "a", "output"), { recursive: true });
+    await writeFile(join(fleetRoot, "workers", "a", "output", "node-requests.json"),
+      JSON.stringify({ workers: [{ id: "c", type: "write", task: "extra", depends_on: ["a"] }] }), "utf-8");
+    const registry = { getAvailable: () => [], getAll: () => [] };
+    const note = await drainNodeRequests(fleet, "a", registry);
+    expect(note).toBeUndefined();
+    expect(fleet.spec.workers.map((w) => w.id)).toContain("c");
+  });
+
+  it("returns a note for invalid request JSON", async () => {
+    const fleetRoot = await mkdtemp(join(tmpdir(), "fleet-sideband-"));
+    const fleet = runningFleet();
+    fleet.fleetRoot = fleetRoot;
+    await mkdir(join(fleetRoot, "workers", "a", "output"), { recursive: true });
+    await writeFile(join(fleetRoot, "workers", "a", "output", "node-requests.json"), "{junk", "utf-8");
+    const registry = { getAvailable: () => [], getAll: () => [] };
+    const note = await drainNodeRequests(fleet, "a", registry);
+    expect(note).toContain("node-requests");
+  });
+
+  it("returns undefined when no sideband file exists", async () => {
+    const fleet = runningFleet();
+    fleet.fleetRoot = await mkdtemp(join(tmpdir(), "fleet-sideband-"));
+    const registry = { getAvailable: () => [], getAll: () => [] };
+    expect(await drainNodeRequests(fleet, "a", registry)).toBeUndefined();
   });
 });

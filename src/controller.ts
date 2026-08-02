@@ -3,7 +3,8 @@ import { join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { writeWorkerPrompts } from "./fleet-store.js";
-import { resolveModelReference } from "./model-resolution.js";
+import { resolveModelReference, type ModelRegistryLike } from "./model-resolution.js";
+import { insertWorkers } from "./insert.js";
 import { writeReport } from "./report.js";
 import { runWorker, sessionFactoryForModel, workerWithResolvedModel, type AgentSessionLike } from "./runner.js";
 import { runFleet } from "./scheduler.js";
@@ -81,6 +82,29 @@ export function prepareRelaunch(fleet: ActiveFleet, nodeId: string): void {
 export function registerNodeSession(fleet: ActiveFleet, nodeId: string, session: AgentSessionLike): void {
   fleet.sessions.set(nodeId, session);
   if (fleet.killedNodes.has(nodeId)) void session.abort().catch(() => {});
+}
+
+export async function drainNodeRequests(
+  fleet: ActiveFleet,
+  nodeId: string,
+  registry: ModelRegistryLike,
+): Promise<string | undefined> {
+  const p = join(fleet.fleetRoot, "workers", nodeId, "output", "node-requests.json");
+  let raw: string;
+  try {
+    raw = await readFile(p, "utf-8");
+  } catch {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    return `node-requests.json invalid JSON: ${(e as Error).message}`;
+  }
+  const r = await insertWorkers(fleet, parsed, registry);
+  if (!r.ok) return `node-requests rejected: ${r.message.split("\n")[0]}`;
+  return undefined;
 }
 
 export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resume = false, continuePass = false): Promise<void> {
@@ -183,6 +207,14 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
         fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, nodeState);
         checkCostWarning();
         updateWidget(ctx, fleet);
+      },
+      onNodeAdded: () => {
+        updateWidget(ctx, fleet);
+      },
+      onNodeCompleted: async (nodeId) => {
+        const note = await drainNodeRequests(fleet, nodeId, ctx.modelRegistry);
+        if (!note) updateWidget(ctx, fleet);
+        return note;
       },
       prepareIteration: async (_n, state) => {
         fleet.state = state;
