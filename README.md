@@ -1,4 +1,4 @@
-# pi-fleet
+# pi-agent-fleet
 
 DAG-of-agents fleets for [pi](https://github.com/earendil-works/pi-coding-agent). Define a fleet of worker agents as data, preview it, launch it, watch it run — with per-worker output contracts, reviewer-gated iteration loops, live cost tracking, and a machine-written report.
 
@@ -18,9 +18,9 @@ Philosophy: no auto-restart, no auto-kill, no babysitting. Failures surface; the
 ## Install
 
 ```bash
-pi install npm:pi-fleet                    # from npm
-pi install git:github.com/sagarsrc/pi-fleet # from git
-pi install /path/to/pi-fleet               # local
+pi install npm:pi-agent-fleet                    # from npm
+pi install git:github.com/sagarsrc/pi-agent-fleet # from git
+pi install /path/to/pi-agent-fleet               # local
 ```
 
 ## Quickstart

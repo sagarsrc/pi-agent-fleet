@@ -1,5 +1,5 @@
 {
-  "name": "pi-fleet",
+  "name": "pi-agent-fleet",
   "version": "0.2.0",
   "description": "DAG-of-agents fleets for pi \u2014 parallel workers with contracts, reviewer-gated iteration loops, and live progress",
   "type": "module",
@@ -29,10 +29,10 @@
   "author": "Sagar Sarkale",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sagarsrc/pi-fleet.git"
+    "url": "git+https://github.com/sagarsrc/pi-agent-fleet.git"
   },
-  "bugs": "https://github.com/sagarsrc/pi-fleet/issues",
-  "homepage": "https://github.com/sagarsrc/pi-fleet#readme",
+  "bugs": "https://github.com/sagarsrc/pi-agent-fleet/issues",
+  "homepage": "https://github.com/sagarsrc/pi-agent-fleet#readme",
   "keywords": [
     "pi-package",
     "pi-extension",
