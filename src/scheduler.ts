@@ -5,7 +5,7 @@ import { archiveIteration, initFleetState, patchNode, resetForIteration, snapsho
 import { TERMINAL_NODE_STATUSES } from "./types.js";
 import type { FleetSpec, FleetState, IterationSnapshot, NodeState, Verdict } from "./types.js";
 
-export type SpawnFn = (nodeId: string) => Promise<{ ok: boolean; turns: number; tokens: number; error?: string }>;
+export type SpawnFn = (nodeId: string) => Promise<{ ok: boolean; turns: number; tokens: number; cost?: number; error?: string }>;
 
 export interface RunFleetOpts {
   spec: FleetSpec;
@@ -98,7 +98,7 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
         const p = opts.spawn(w.id).then(async (res) => {
           if (opts.killSwitch?.killed) return;
           if (!res.ok) {
-            await patch(w.id, { status: "failed", ended_at: new Date().toISOString(), turns: res.turns, tokens: res.tokens });
+            await patch(w.id, { status: "failed", ended_at: new Date().toISOString(), turns: res.turns, tokens: res.tokens, cost_usd_estimate: res.cost ?? 0 });
             return;
           }
           const contract = await verifyOutputs({
@@ -111,6 +111,7 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
             ended_at: new Date().toISOString(),
             turns: res.turns,
             tokens: res.tokens,
+            cost_usd_estimate: res.cost ?? 0,
             contract_result: contract,
             produced_outputs: contract.checks.filter((c) => c.ok).map((c) => c.path),
           });

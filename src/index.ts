@@ -20,6 +20,7 @@ export interface ActiveFleet {
   killSwitch: { killed: boolean };
   pauseSwitch: { paused: boolean };
   running: boolean;
+  costWarned?: boolean;
 }
 
 let active: ActiveFleet | undefined;
@@ -171,7 +172,18 @@ async function dagPreview(spec: FleetSpec, state: FleetState | undefined, fleetR
 
 async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resume = false): Promise<void> {
   fleet.running = true;
+  fleet.costWarned = false;
   updateWidget(ctx, fleet);
+
+  const checkCostWarning = () => {
+    const warn = fleet.spec.config.warn_cost_usd;
+    if (!warn || fleet.costWarned) return;
+    const cost = fleet.state.cost_usd_estimate;
+    if (cost >= warn) {
+      fleet.costWarned = true;
+      if (ctx.hasUI) ctx.ui.notify(`fleet cost warning: $${cost.toFixed(4)} >= $${warn}`, "warning");
+    }
+  };
 
   const spawn = async (nodeId: string) => {
     try {
@@ -206,6 +218,10 @@ async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resume = fal
         onEvent: (e) => {
           if (e.type === "turn") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { turns: e.turns });
           if (e.type === "tokens") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { tokens: e.tokens });
+          if (e.type === "cost") {
+            fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { cost_usd_estimate: e.cost });
+            checkCostWarning();
+          }
           if (e.type === "error") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { status_note: e.message });
           updateWidget(ctx, fleet);
         },
@@ -229,6 +245,7 @@ async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resume = fal
       pauseSwitch: fleet.pauseSwitch,
       onNodeChange: (nodeId, nodeState) => {
         fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, nodeState);
+        checkCostWarning();
         updateWidget(ctx, fleet);
       },
       prepareIteration: async (_n, state) => {
@@ -322,7 +339,7 @@ export default function (pi: ExtensionAPI) {
       const state = initFleetState(v.spec);
       await ensureFleetGitignore(ctx.cwd);
       await writePlanFiles(fleetRoot, v.spec, state);
-      active = { spec: v.spec, fleetRoot, state, killSwitch: { killed: false }, pauseSwitch: { paused: false }, running: false };
+      active = { spec: v.spec, fleetRoot, state, killSwitch: { killed: false }, pauseSwitch: { paused: false }, running: false, costWarned: false };
       updateWidget(ctx, active);
 
       const dag = await dagPreview(v.spec, undefined, fleetRoot);

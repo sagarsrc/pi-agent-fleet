@@ -35,6 +35,15 @@ export async function readState(fleetRoot: string): Promise<FleetState> {
   };
 }
 
+export function fleetCost(state: FleetState): number {
+  const liveCost = Object.values(state.nodes).reduce((sum, n) => sum + n.cost_usd_estimate, 0);
+  const archivedCost = state.iterations.reduce(
+    (sum, iter) => sum + Object.values(iter.nodes).reduce((s, n) => s + n.cost_usd_estimate, 0),
+    0,
+  );
+  return liveCost + archivedCost;
+}
+
 export async function writeState(fleetRoot: string, state: FleetState): Promise<void> {
   const unique = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}`;
   const tmp = join(fleetRoot, `.state.json.${unique}.tmp`);
@@ -77,7 +86,7 @@ export function resetForIteration(state: FleetState, spec: FleetSpec): FleetStat
       nodes[w.id] = { status: "pending", turns: 0, tokens: 0, cost_usd_estimate: 0, produced_outputs: [] };
     }
   }
-  const cost = Object.values(nodes).reduce((sum, n) => sum + n.cost_usd_estimate, 0);
+  const cost = fleetCost({ ...state, nodes });
   return { ...state, iteration: state.iteration + 1, nodes, cost_usd_estimate: cost };
 }
 
@@ -104,6 +113,6 @@ export function patchNode(
   const node = state.nodes[nodeId];
   if (!node) throw new Error(`unknown node "${nodeId}"`);
   const nodes = { ...state.nodes, [nodeId]: { ...node, ...patch } };
-  const cost = Object.values(nodes).reduce((sum, n) => sum + n.cost_usd_estimate, 0);
+  const cost = fleetCost({ ...state, nodes });
   return { ...state, nodes, cost_usd_estimate: cost };
 }
