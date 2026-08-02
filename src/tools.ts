@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { validateFleetSpec } from "./dag.js";
+import { insertWorkers } from "./insert.js";
 import { loadPreferences, mergeFleetConfig } from "./preferences.js";
 import { activeFleet, currentState, dagPreview, killFleet, prepareRelaunch, startLoop, statusText, updateWidget } from "./controller.js";
 import { editConfig, editNode, type ConfigEditKey, type NodeEditKey } from "./edits.js";
@@ -221,6 +222,24 @@ export function registerFleetTools(pi: ExtensionAPI): void {
       prepareRelaunch(fleet, params.node_id);
       void startLoop(fleet, ctx, false, true);
       return textResult(`fleet relaunch requested for ${params.node_id}`);
+    },
+  });
+
+  pi.registerTool({
+    name: "fleet_add_node",
+    label: "Fleet Add Node",
+    description: "Insert one or more worker nodes into the active fleet's DAG on the fly. The merged graph is validated (unique ids, known deps, acyclic, loop-gate rules); inserted nodes start as pending and dispatch as soon as their deps complete — including mid-run. Refused on completed fleets.",
+    promptSnippet: "Add worker nodes to the active fleet DAG.",
+    parameters: Type.Object({
+      workers: Type.Array(WorkerSchema, { minItems: 1 }),
+    }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const active = activeFleet.current;
+      if (!active) return textResult("no fleet planned yet");
+      await currentState(active);
+      const r = await insertWorkers(active, params.workers, ctx.modelRegistry);
+      if (r.ok) updateWidget(ctx, active);
+      return textResult(r.message, { inserted: r.inserted ?? [] });
     },
   });
 

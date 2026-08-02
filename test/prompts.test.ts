@@ -31,4 +31,9 @@ describe("buildWorkerPrompt", () => {
     expect(p).toContain("Write code changes directly at their repo paths");
     expect(p).not.toContain("/f/workers/build/output/ — use absolute paths");
   });
+  it("documents the node-requests sideband contract", () => {
+    const prompt = buildWorkerPrompt({ spec, state, workerId: "research", fleetRoot: "/fr" });
+    expect(prompt).toContain("node-requests.json");
+    expect(prompt).toContain("Requesting additional nodes");
+  });
 });

@@ -87,6 +87,13 @@ export function buildWorkerPrompt(opts: {
     );
   }
 
+  out.push("## Requesting additional nodes (optional)", "");
+  out.push(`If you discover work this DAG cannot do as currently shaped, write ${workerDir}/output/node-requests.json:`, "");
+  out.push(
+    `{ "workers": [{ "id": "kebab-case", "type": "research|code-run|reviewer|write|read-only", "task": "self-contained instructions", "depends_on": ["${workerId}"], "outputs": [{ "path": "output/file.md", "kind": "markdown", "required": true }] }] }`,
+    "",
+  );
+  out.push("The runner validates the merged graph (unique ids, known deps, acyclic, loop-gate rules) and inserts valid nodes as pending. Invalid batches are rejected atomically and noted on your node. Do not set model or effort fields — the runner assigns them. Depend on your own id when the new node needs your outputs.", "");
   out.push("## Your output obligations", "");
   if (worker.outputs.length === 0) {
     out.push("No declared outputs — completion is enough.", "");

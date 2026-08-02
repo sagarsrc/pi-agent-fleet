@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { activeFleet, currentState, killFleet, prepareRelaunch, startLoop, updateWidget } from "./controller.js";
+import { insertWorkers } from "./insert.js";
 import { editConfig, editNode, type ConfigEditKey, type NodeEditKey } from "./edits.js";
 import { resolveModelReference } from "./model-resolution.js";
 import { clearPreference, loadPreferences, PREFERENCE_KEYS, savePreferences, setPreference } from "./preferences.js";
@@ -11,7 +12,7 @@ import { renderDag } from "./viz.js";
 
 export function registerFleetCommand(pi: ExtensionAPI): void {
   pi.registerCommand("fleet", {
-    description: "Fleet commands: /fleet viz, /fleet status, /fleet configure [show|set k v], /fleet edit <node_id>|config ..., /fleet clear, /fleet kill all|<node_id>, /fleet pause, /fleet resume, /fleet relaunch <node_id> [model]",
+    description: "Fleet commands: /fleet viz, /fleet status, /fleet configure [show|set k v], /fleet add <json>, /fleet edit <node_id>|config ..., /fleet clear, /fleet kill all|<node_id>, /fleet pause, /fleet resume, /fleet relaunch <node_id> [model]",
     handler: async (args, ctx) => {
       const [cmd, target] = args.trim().split(/\s+/);
       if (cmd === "configure") {
@@ -161,6 +162,25 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
         ctx.ui.notify(`fleet relaunch requested for ${target}`, "info");
         return;
       }
+      if (cmd === "add") {
+        const body = args.trim().split(/\s+/).slice(1).join(" ");
+        if (!body) {
+          ctx.ui.notify('usage: /fleet add \'{"workers": [{"id": "x", "type": "research", "task": "...", "depends_on": []}]}\'', "warning");
+          return;
+        }
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(body);
+        } catch (e) {
+          ctx.ui.notify(`invalid JSON: ${(e as Error).message}`, "error");
+          return;
+        }
+        await currentState(active);
+        const r = await insertWorkers(active, parsed, ctx.modelRegistry);
+        ctx.ui.notify(r.message, r.ok ? "info" : "error");
+        if (r.ok) updateWidget(ctx, active);
+        return;
+      }
       if (cmd === "edit") {
         const parts = args.trim().split(/\s+/).filter((s) => s.length > 0);
         const target = parts[1];
@@ -199,7 +219,7 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
         if (r.ok) updateWidget(ctx, active);
         return;
       }
-      ctx.ui.notify("usage: /fleet viz | /fleet status | /fleet configure [show|set k v] | /fleet edit <node_id>|config ... | /fleet clear | /fleet kill all|<node_id> | /fleet pause | /fleet resume | /fleet relaunch <node_id> [model]", "warning");
+      ctx.ui.notify("usage: /fleet viz | /fleet status | /fleet configure [show|set k v] | /fleet add <json> | /fleet edit <node_id>|config ... | /fleet clear | /fleet kill all|<node_id> | /fleet pause | /fleet resume | /fleet relaunch <node_id> [model]", "warning");
     },
   });
 }
