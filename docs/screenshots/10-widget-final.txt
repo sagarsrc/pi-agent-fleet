@@ -1,0 +1,50 @@
+  Thinking...
+
+  Cheapest: deepseek/deepseek-v4-flash ($0.14/$0.28). Plan with it.
+
+
+  fleet_plan
+  layer 0: vertical-farming (deepseek/deepseek-v4-flash)  lab-grown-leather (deepseek/deepseek-v4-flash)
+  layer 1: merger (deepseek/deepseek-v4-flash)
+
+  edges:
+    vertical-farming --▶ merger
+    lab-grown-leather --▶ merger
+
+  fleet root: /private/tmp/fleet-demo2/.fleet/brief-merge-20260803035639
+  Show this preview to the user. Call fleet_launch only after they explicitly confirm.
+
+
+  Thinking...
+
+  Plan valid. User pre-approved → launch.
+
+
+  fleet_launch
+  fleet launched
+
+
+  Thinking...
+
+  Fleet live.
+
+  ```
+    layer 0: vertical-farming   lab-grown-leather   (parallel)
+    layer 1: merger
+  ```
+
+  - Model: deepseek/deepseek-v4-flash — cheapest in registry
+  - Root: /private/tmp/fleet-demo2/.fleet/brief-merge-20260803035639
+  - Output: output/combined-brief.md in merger dir when done
+
+  fleet completed; report: /private/tmp/fleet-demo2/.fleet/brief-merge-20260803035639/report.md
+
+  ● fleet: brief-merge  (3/3 done · $0.00)
+  ├─ ✓ vertical-farming (deepseek/deepseek-v4-flash) · 3 turns · 36.3k tok · $0.00
+  ├─ ✓ lab-grown-leather (deepseek/deepseek-v4-flash) · 4 turns · 50.5k tok · $0.00
+  └─ ✓ merger (deepseek/deepseek-v4-flash) · 4 turns · 34.5k tok · $0.00
+   Kimi K3  think:max   fleet-demo2   main ?6   14k/1.0M (1.4%) 󰁨    86k  $0.06  ⠠⠄ caveman level: ULTRA
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  >
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ↳ Fleet job: two parallel researchers — one writes a short markdown brief on urban vertical farming, one on lab-grown leather. Then a merger combines both into one markdown file. Cheapest models, plan and launch, app…

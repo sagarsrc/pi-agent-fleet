@@ -1,0 +1,50 @@
+
+
+  {"fleet_name":"demo-fleet","type":"dag","config":{"max_concurrent":2,"model":"gpt-5.4-mini"},"workers":[{"id":"space-scan","type":"research","task":"Use web_search to find one recent headline about space exploration.
+  Write output/space.md with a markdown heading and one short paragraph about
+  it.","depends_on":[],"outputs":[{"path":"output/space.md","kind":"markdown","required":true}]},{"id":"ocean-scan","type":"research","task":"Use web_search to find one recent headline about ocean science. Write
+  output/ocean.md with a markdown heading and one short paragraph about it.","depends_on":[],"outputs":[{"path":"output/ocean.md","kind":"markdown","required":true}]},{"id":"tech-scan","type":"research","task":"Use
+  web_search to find one recent headline about computer hardware. Write output/tech.md with a markdown heading and one short paragraph about
+  it.","depends_on":[],"outputs":[{"path":"output/tech.md","kind":"markdown","required":true}]},{"id":"digest","type":"write","task":"Read the three upstream files (paths in your upstream inputs) and write
+  output/digest.md with heading '# Digest' and one bullet per input.","depends_on":["space-scan","ocean-scan","tech-scan"],"outputs":[{"path":"output/digest.md","kind":"markdown","required":true}]}]}
+
+
+  Thinking...
+
+  Planning fleet now.
+
+
+  fleet_plan
+  layer 0: space-scan (gpt-5.4-mini)  ocean-scan (gpt-5.4-mini)  tech-scan (gpt-5.4-mini)
+  layer 1: digest (gpt-5.4-mini)
+
+  edges:
+    space-scan --▶ digest
+    ocean-scan --▶ digest
+    tech-scan --▶ digest
+
+  fleet root: /private/tmp/fleet-demo/.fleet/demo-fleet-20260803031814
+  Show this preview to the user. Call fleet_launch only after they explicitly confirm.
+
+
+  Thinking...
+
+  Plan valid. Launching with skip_confirm per user instruction.
+
+
+  fleet_launch
+  fleet launched
+
+
+  Fleet demo-fleet launched. 3 research nodes parallel (max_concurrent 2) → digest node. Root: /private/tmp/fleet-demo/.fleet/demo-fleet-20260803031814. Check progress with fleet_status.
+
+  ● fleet: demo-fleet  (1/4 done · $0.01)
+  ├─ ✓ space-scan (gpt-5.4-mini) · 3 turns · 20.9k tok · $0.01
+  ├─ ⠼ ocean-scan (gpt-5.4-mini) · 1 turns · 6.6k tok · $0.01
+  ├─ ⠼ tech-scan (gpt-5.4-mini) · 0 turns · 0.0k tok · $0.00
+  └─ ○ digest (gpt-5.4-mini)
+   Kimi K3  think:max   fleet-demo   main ?2   12k/1.0M (1.2%) 󰁨    35k  $0.06  ⠠⠄ caveman level: ULTRA
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  >
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ↳ Without asking me anything, do exactly this: call the fleet_plan tool with this exact fleet definition, then immediately call fleet_launch with skip_confirm true:
