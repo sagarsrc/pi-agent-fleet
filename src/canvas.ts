@@ -154,6 +154,7 @@ body.light { color-scheme: light;
 body { margin:0; font:13px/1.45 -apple-system, Menlo, monospace; background:var(--bg); color:var(--fg); }
 header { padding:8px 14px; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
 header .name { font-weight:700; color:var(--hdr); }
+#hdr { display:flex; gap:12px; align-items:baseline; }
 .pill { padding:1px 8px; border-radius:10px; border:1px solid var(--line); }
 button, select { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:3px 10px; font:inherit; cursor:pointer; }
 button:hover, select:hover { border-color:var(--accent); }
