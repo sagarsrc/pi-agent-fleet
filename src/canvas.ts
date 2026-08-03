@@ -184,10 +184,13 @@ function drawEdges(s){
     var a = dag.querySelector('[data-id="' + e.from + '"]');
     var b = dag.querySelector('[data-id="' + e.to + '"]');
     if(!a || !b) return;
-    var x1 = a.offsetLeft + a.offsetWidth;
-    var y1 = a.offsetTop + a.offsetHeight/2;
-    var x2 = b.offsetLeft;
-    var y2 = b.offsetTop + b.offsetHeight/2;
+    var dr = dag.getBoundingClientRect();
+    var ar = a.getBoundingClientRect();
+    var br = b.getBoundingClientRect();
+    var x1 = ar.right - dr.left + dag.scrollLeft;
+    var y1 = ar.top - dr.top + dag.scrollTop + ar.height/2;
+    var x2 = br.left - dr.left + dag.scrollLeft;
+    var y2 = br.top - dr.top + dag.scrollTop + br.height/2;
     var mx = (x1 + x2) / 2;
     var p = document.createElementNS("http://www.w3.org/2000/svg", "path");
     p.setAttribute("d", "M " + x1 + " " + y1 + " C " + mx + " " + y1 + ", " + mx + " " + y2 + ", " + x2 + " " + y2);
