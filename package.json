@@ -1,7 +1,7 @@
 {
   "name": "pi-agent-fleet",
   "version": "0.2.0",
-  "description": "DAG-of-agents fleets for pi \u2014 parallel workers with contracts, reviewer-gated iteration loops, and live progress",
+  "description": "DAG-of-agents fleets for pi — parallel workers with contracts, reviewer-gated iteration loops, and live progress",
   "type": "module",
   "scripts": {
     "test": "vitest run",
@@ -9,16 +9,16 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
     "typebox": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.80.0",
     "@earendil-works/pi-ai": "^0.80.0",
+    "@earendil-works/pi-coding-agent": "^0.80.0",
+    "@types/node": "^22.0.0",
     "typescript": "^5.5.0",
-    "vitest": "^2.1.0",
-    "@types/node": "^22.0.0"
+    "vitest": "^2.1.0"
   },
   "pi": {
     "extensions": [
