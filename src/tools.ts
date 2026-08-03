@@ -342,7 +342,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
         url = `${url}?fleet=${encodeURIComponent(params.fleet)}`;
       }
       if (action === "open") await openInBrowser(url);
-      return textResult(`fleet canvas: ${url}`, { url: server.url });
+      return textResult(`fleet canvas: ${url}`, { url: url });
     },
   });
 }

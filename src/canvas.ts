@@ -257,9 +257,6 @@ stage.addEventListener("pointermove", function(e){
   applyCamera();
 });
 stage.addEventListener("pointerup", function(){ dragging = false; });
-function nodePos(n){
-  return { x: n._lx, y: n._ly, w: 260, h: n._el ? n._el.offsetHeight : 110 };
-}
 function fitView(){
   var els = viewport.querySelectorAll(".node");
   if(!els.length) return;
@@ -316,7 +313,7 @@ function cardHtml(n){
   if(n.worktree) flags.push("worktree");
   return '<div class="nid">' + esc(n.id) + '<span class="badge">' + esc(n.type) + '</span></div>'
     + '<div class="meta">' + esc(n.status) + ' · ' + esc(n.model) + (n.effort ? " · " + esc(n.effort) : "") + '</div>'
-    + '<div class="stats">' + n.turns + ' turns · ' + (n.tokens/1000).toFixed(1) + 'k tok · $' + n.cost_usd_estimate.toFixed(2) + '</div>'
+    + '<div class="stats">' + String(n.turns|0) + ' turns · ' + (Number(n.tokens||0)/1000).toFixed(1) + 'k tok · $' + Number(n.cost_usd_estimate||0).toFixed(2) + '</div>'
     + (chips ? '<div>' + chips + '</div>' : "")
     + (flags.length ? '<div class="flags">' + flags.join(" · ") + '</div>' : "")
     + (n.status_note ? '<div class="note">' + esc(n.status_note) + '</div>' : "");
@@ -380,16 +377,23 @@ function tick(){
     }
     var loop = s.loop ? " · iter " + s.iteration + "/" + s.loop.max_iterations + " · streak " + s.lgtm_streak : "";
     var done = s.nodes.filter(function(n){ return n.status==="completed"; }).length;
-    hdr.innerHTML = '<span class="pill">' + esc(s.status) + '</span>'
+    hdr.innerHTML = '<span class="name">' + esc(s.fleet_name) + '</span>'
+      + '<span class="pill">' + esc(s.status) + '</span>'
       + (s.paused ? '<span class="pill">paused</span>' : '')
       + '<span>' + done + '/' + s.nodes.length + ' done</span>'
       + '<span>$' + s.cost_usd_estimate.toFixed(2) + '</span>'
       + '<span class="meta">' + esc(loop) + '</span>';
-    var st = stage.scrollTop;
     render(s);
-    stage.scrollTop = st;
   }).catch(function(){
-    document.getElementById("hdr").innerHTML = '<span class="pill">connection lost</span>';
+    if(currentFleet){
+      document.getElementById("hdr").innerHTML = '<span class="pill">fleet unavailable</span>';
+      currentFleet = null;
+      document.getElementById("fleetSel").value = "";
+      try { localStorage.removeItem("fleet-canvas-fleet"); } catch(e){}
+      setTimeout(function(){ tick(); }, 0);
+    } else {
+      document.getElementById("hdr").innerHTML = '<span class="pill">connection lost</span>';
+    }
   });
 }
 function side(){
@@ -435,7 +439,15 @@ function loadFleets(){
       selEl.value = pick;
     }
     tick();
-  }).catch(function(){ tick(); });
+    var qs = new URLSearchParams(location.search);
+    var pre = qs.get("node");
+    if(pre) sel(pre);
+  }).catch(function(){
+    tick();
+    var qs = new URLSearchParams(location.search);
+    var pre = qs.get("node");
+    if(pre) sel(pre);
+  });
 }
 document.getElementById("fleetSel").addEventListener("change", function(e){
   currentFleet = e.target.value || null;
@@ -448,9 +460,6 @@ document.getElementById("fleetSel").addEventListener("change", function(e){
 loadFleets();
 setInterval(tick, 1500);
 setInterval(side, 2000);
-var qs = new URLSearchParams(location.search);
-var pre = qs.get("node");
-if(pre) sel(pre);
 </script>
 </body>
 </html>`;
