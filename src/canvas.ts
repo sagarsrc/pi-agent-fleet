@@ -1,16 +1,19 @@
 import { execFile } from "node:child_process";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import type { ActiveFleet } from "./controller.js";
+import { readState } from "./state.js";
+import type { FleetSpec, FleetState } from "./types.js";
 
 const execFileP = promisify(execFile);
 
 export interface CanvasNodeView {
   id: string;
   type: string;
+  task: string;
   status: string;
   model: string;
   effort?: string;
@@ -19,6 +22,10 @@ export interface CanvasNodeView {
   cost_usd_estimate: number;
   status_note?: string;
   produced_outputs: string[];
+  outputs: Array<{ path: string; kind: string; required: boolean }>;
+  depends_on: string[];
+  iterate: boolean;
+  worktree: boolean;
 }
 
 export interface CanvasPayload {
@@ -30,8 +37,10 @@ export interface CanvasPayload {
   paused: boolean;
   cost_usd_estimate: number;
   loop?: { gate: string; max_iterations: number; lgtm_count: number };
+  config: { max_concurrent: number; model?: string; effort?: string; warn_cost_usd?: number };
   nodes: CanvasNodeView[];
   edges: Array<{ from: string; to: string }>;
+  iterations: Array<{ n: number; verdict: string | null; cost: number; tokens: number; duration_ms: number }>;
   generated_at: string;
 }
 
@@ -48,11 +57,18 @@ export function buildCanvasPayload(fleet: ActiveFleet): CanvasPayload {
     loop: spec.config.loop
       ? { gate: spec.config.loop.gate, max_iterations: spec.config.loop.max_iterations, lgtm_count: spec.config.loop.lgtm_count }
       : undefined,
+    config: {
+      max_concurrent: spec.config.max_concurrent,
+      model: spec.config.model,
+      effort: spec.config.effort,
+      warn_cost_usd: spec.config.warn_cost_usd,
+    },
     nodes: spec.workers.map((w) => {
       const n = state.nodes[w.id];
       return {
         id: w.id,
         type: w.type,
+        task: w.task,
         status: n?.status ?? "pending",
         model: w.model ?? spec.config.model ?? "(default)",
         effort: w.effort ?? spec.config.effort,
@@ -61,9 +77,20 @@ export function buildCanvasPayload(fleet: ActiveFleet): CanvasPayload {
         cost_usd_estimate: n?.cost_usd_estimate ?? 0,
         status_note: n?.status_note,
         produced_outputs: n?.produced_outputs ?? [],
+        outputs: w.outputs.map((o) => ({ path: o.path, kind: o.kind, required: o.required })),
+        depends_on: [...w.depends_on],
+        iterate: w.iterate !== false,
+        worktree: w.worktree === true,
       };
     }),
     edges: spec.workers.flatMap((w) => w.depends_on.map((d) => ({ from: d, to: w.id }))),
+    iterations: state.iterations.map((it) => ({
+      n: it.n,
+      verdict: it.verdict,
+      cost: Object.values(it.nodes).reduce((s, n) => s + n.cost_usd_estimate, 0),
+      tokens: Object.values(it.nodes).reduce((s, n) => s + n.tokens, 0),
+      duration_ms: new Date(it.ended_at).getTime() - new Date(it.started_at).getTime(),
+    })),
     generated_at: new Date().toISOString(),
   };
 }
@@ -269,6 +296,63 @@ if(pre) sel(pre);
 </html>`;
 }
 
+export interface FleetRootInfo {
+  name: string;
+  root: string;
+  status: string;
+  created_at: string;
+}
+
+export async function readDiskFleet(fleetRoot: string): Promise<ActiveFleet> {
+  const spec = JSON.parse(await readFile(join(fleetRoot, "fleet.json"), "utf-8")) as FleetSpec;
+  const state = await readState(fleetRoot);
+  return {
+    spec,
+    fleetRoot,
+    state,
+    killSwitch: { killed: false },
+    pauseSwitch: { paused: false },
+    running: false,
+    sessions: new Map(),
+    killedNodes: new Set(),
+  };
+}
+
+export async function listFleetRoots(cwd: string): Promise<FleetRootInfo[]> {
+  const base = join(cwd, ".fleet");
+  let entries: string[];
+  try {
+    entries = await readdir(base);
+  } catch {
+    return [];
+  }
+  const out: FleetRootInfo[] = [];
+  for (const name of entries) {
+    const root = join(base, name);
+    try {
+      const s = await stat(join(root, "fleet.json"));
+      if (!s.isFile()) continue;
+      const state = JSON.parse(await readFile(join(root, "state.json"), "utf-8")) as Partial<FleetState>;
+      out.push({
+        name,
+        root,
+        status: typeof state.status === "string" ? state.status : "unknown",
+        created_at: typeof state.created_at === "string" ? state.created_at : new Date(s.mtimeMs).toISOString(),
+      });
+    } catch {
+      // not a fleet root (no fleet.json) or unreadable state — skip or mark unknown
+      try {
+        await stat(join(root, "fleet.json"));
+        out.push({ name, root, status: "unknown", created_at: "" });
+      } catch {
+        // not a fleet root
+      }
+    }
+  }
+  out.sort((a, b) => b.created_at.localeCompare(a.created_at));
+  return out;
+}
+
 export interface CanvasServer {
   url: string;
   port: number;
@@ -277,6 +361,7 @@ export interface CanvasServer {
 
 export async function startCanvasServer(opts: {
   getFleet: () => ActiveFleet | undefined;
+  cwd: string;
   port?: number;
 }): Promise<CanvasServer> {
   const server = createServer(async (req, res) => {
@@ -287,23 +372,45 @@ export async function startCanvasServer(opts: {
         res.end(renderCanvasPage());
         return;
       }
-      if (url.pathname === "/api/state") {
-        const fleet = opts.getFleet();
+      const resolveFleet = async (name: string | null): Promise<ActiveFleet | undefined | "unknown"> => {
+        const live = opts.getFleet();
+        if (!name) return live;
+        if (live && basename(live.fleetRoot) === name) return live;
+        const roots = await listFleetRoots(opts.cwd);
+        if (!roots.some((r) => r.name === name)) return "unknown";
+        try {
+          return await readDiskFleet(join(opts.cwd, ".fleet", name));
+        } catch {
+          return "unknown";
+        }
+      };
+      if (url.pathname === "/api/fleets") {
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify(fleet ? buildCanvasPayload(fleet) : { empty: true }));
+        res.end(JSON.stringify({ fleets: await listFleetRoots(opts.cwd) }));
+        return;
+      }
+      if (url.pathname === "/api/state") {
+        const f = await resolveFleet(url.searchParams.get("fleet"));
+        if (f === "unknown") {
+          res.writeHead(404);
+          res.end();
+          return;
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(f ? buildCanvasPayload(f) : { empty: true }));
         return;
       }
       const m = url.pathname.match(/^\/api\/session\/([a-z0-9][a-z0-9-]*)$/);
       if (m) {
-        const fleet = opts.getFleet();
-        if (!fleet || !fleet.spec.workers.some((w) => w.id === m[1])) {
+        const f = await resolveFleet(url.searchParams.get("fleet"));
+        if (!f || f === "unknown" || !f.spec.workers.some((w) => w.id === m[1])) {
           res.writeHead(404);
           res.end();
           return;
         }
         const rawTail = Number(url.searchParams.get("tail"));
         const tail = Number.isInteger(rawTail) && rawTail > 0 ? Math.min(rawTail, 200) : 30;
-        const file = await latestSessionFile(join(fleet.fleetRoot, "workers", m[1]));
+        const file = await latestSessionFile(join(f.fleetRoot, "workers", m[1]));
         res.writeHead(200, { "content-type": "application/json" });
         if (!file) {
           res.end(JSON.stringify({ entries: [] }));

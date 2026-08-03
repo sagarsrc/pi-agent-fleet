@@ -73,7 +73,7 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
           ctx.ui.notify("fleet canvas stopped", "info");
           return;
         }
-        const server = await ensureCanvas();
+        const server = await ensureCanvas(ctx);
         await openInBrowser(server.url);
         ctx.ui.notify(`fleet canvas: ${server.url}`, "info");
         return;

@@ -154,18 +154,18 @@ describe("killFleet node targets", () => {
 
 describe("canvas lifecycle", () => {
   it("ensureCanvas returns a singleton and stopCanvas tears it down", async () => {
-    const a = await ensureCanvas();
-    const b = await ensureCanvas();
+    const a = await ensureCanvas({ cwd: "/tmp" } as unknown as ExtensionContext);
+    const b = await ensureCanvas({ cwd: "/tmp" } as unknown as ExtensionContext);
     expect(a).toBe(b);
     expect(a.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
     await stopCanvas();
-    const c = await ensureCanvas();
+    const c = await ensureCanvas({ cwd: "/tmp" } as unknown as ExtensionContext);
     expect(c).not.toBe(a);
     await stopCanvas();
   });
 
   it("serves the active fleet through the cell", async () => {
-    const server = await ensureCanvas();
+    const server = await ensureCanvas({ cwd: "/tmp" } as unknown as ExtensionContext);
     activeFleet.current = runningFleet();
     try {
       const state = await (await fetch(`${server.url}/api/state`)).json();

@@ -327,13 +327,13 @@ export function registerFleetTools(pi: ExtensionAPI): void {
     parameters: Type.Object({
       action: Type.Optional(Type.Union([Type.Literal("open"), Type.Literal("stop"), Type.Literal("url")])),
     }),
-    async execute(_id, params) {
+    async execute(_id, params, _signal, _onUpdate, ctx) {
       const action = params.action ?? "url";
       if (action === "stop") {
         await stopCanvas();
         return textResult("fleet canvas stopped");
       }
-      const server = await ensureCanvas();
+      const server = await ensureCanvas(ctx);
       if (action === "open") await openInBrowser(server.url);
       return textResult(`fleet canvas: ${server.url}`, { url: server.url });
     },

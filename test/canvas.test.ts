@@ -1,16 +1,18 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildCanvasPayload,
+  listFleetRoots,
   openInBrowser,
   parseSessionTail,
+  readDiskFleet,
   renderCanvasPage,
   startCanvasServer,
 } from "../src/canvas.js";
 import type { ActiveFleet } from "../src/controller.js";
-import { initFleetState, patchNode } from "../src/state.js";
+import { initFleetState, patchNode, writeState } from "../src/state.js";
 import type { FleetSpec } from "../src/types.js";
 
 const spec: FleetSpec = {
@@ -104,7 +106,7 @@ describe("startCanvasServer", () => {
     await mkdir(join(dir, "workers", "a"), { recursive: true });
     await writeFile(join(dir, "workers", "a", "2026-01-01T00-00-00-000Z_x.jsonl"), '{"type":"message","message":{"role":"user","content":[{"type":"text","text":"peek"}]}}', "utf-8");
 
-    const server = await startCanvasServer({ getFleet: () => f });
+    const server = await startCanvasServer({ getFleet: () => f, cwd: "/tmp" });
     try {
       const page = await fetch(`${server.url}/`);
       expect(page.status).toBe(200);
@@ -127,7 +129,7 @@ describe("startCanvasServer", () => {
   });
 
   it("reports empty when no fleet", async () => {
-    const server = await startCanvasServer({ getFleet: () => undefined });
+    const server = await startCanvasServer({ getFleet: () => undefined, cwd: "/tmp" });
     try {
       const state = await (await fetch(`${server.url}/api/state`)).json();
       expect(state.empty).toBe(true);
@@ -155,5 +157,108 @@ describe("page edges and deep-link", () => {
     expect(html).toContain("data-id");
     expect(html).toContain("wires");
     expect(html).toContain('qs.get("node")');
+  });
+});
+
+describe("enriched payload", () => {
+  it("includes worker structure and fleet config", () => {
+    const rich: FleetSpec = {
+      fleet_name: "rich", type: "dag",
+      config: { max_concurrent: 3, model: "m", effort: "high", warn_cost_usd: 5 },
+      workers: [
+        { id: "a", type: "research", task: "do research", depends_on: [], outputs: [{ path: "output/a.md", kind: "markdown", required: true }], iterate: true, worktree: false },
+        { id: "b", type: "code-run", task: "build it", depends_on: ["a"], outputs: [], iterate: false, worktree: true },
+      ],
+    };
+    const f = fleet();
+    f.spec = rich;
+    const p = buildCanvasPayload(f);
+    expect(p.config).toEqual({ max_concurrent: 3, model: "m", effort: "high", warn_cost_usd: 5 });
+    const a = p.nodes.find((n) => n.id === "a")!;
+    expect(a.type).toBe("research");
+    expect(a.task).toBe("do research");
+    expect(a.outputs).toEqual([{ path: "output/a.md", kind: "markdown", required: true }]);
+    const b = p.nodes.find((n) => n.id === "b")!;
+    expect(b.depends_on).toEqual(["a"]);
+    expect(b.iterate).toBe(false);
+    expect(b.worktree).toBe(true);
+  });
+});
+
+describe("readDiskFleet + listFleetRoots", () => {
+  async function diskRoot(): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), "fleet-disk-"));
+    const root = join(dir, ".fleet", "demo-20260101000000");
+    await mkdir(root, { recursive: true });
+    await writeFile(join(root, "fleet.json"), `${JSON.stringify(spec, null, 2)}\n`, "utf-8");
+    await writeState(root, initFleetState(spec));
+    return dir;
+  }
+
+  it("reads a fleet root from disk", async () => {
+    const dir = await diskRoot();
+    const f = await readDiskFleet(join(dir, ".fleet", "demo-20260101000000"));
+    expect(f.spec.fleet_name).toBe("t");
+    expect(f.state.status).toBe("planned");
+    expect(f.fleetRoot).toContain("demo-20260101000000");
+    expect(f.running).toBe(false);
+  });
+
+  it("throws on missing fleet.json", async () => {
+    await expect(readDiskFleet(await mkdtemp(join(tmpdir(), "fleet-disk-")))).rejects.toThrow();
+  });
+
+  it("lists fleet roots newest first, skipping non-fleet dirs", async () => {
+    const dir = await diskRoot();
+    await mkdir(join(dir, ".fleet", "design-x-2026", "planner"), { recursive: true }); // no fleet.json
+    const roots = await listFleetRoots(dir);
+    expect(roots.length).toBe(1);
+    expect(roots[0].name).toBe("demo-20260101000000");
+    expect(roots[0].status).toBe("planned");
+    expect(typeof roots[0].created_at).toBe("string");
+  });
+
+  it("returns [] when .fleet does not exist", async () => {
+    expect(await listFleetRoots(await mkdtemp(join(tmpdir(), "fleet-disk-")))).toEqual([]);
+  });
+});
+
+describe("fleet-aware routes", () => {
+  it("serves /api/fleets and ?fleet= disk payloads", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "fleet-routes-"));
+    const root = join(dir, ".fleet", "old-fleet-20260101000000");
+    await mkdir(join(root, "workers", "a"), { recursive: true });
+    await writeFile(join(root, "fleet.json"), `${JSON.stringify(spec, null, 2)}\n`, "utf-8");
+    await writeState(root, initFleetState(spec));
+    await writeFile(join(root, "workers", "a", "2026-01-01T00-00-00-000Z_x.jsonl"),
+      '{"type":"message","message":{"role":"user","content":[{"type":"text","text":"old peek"}]}}', "utf-8");
+
+    const server = await startCanvasServer({ getFleet: () => undefined, cwd: dir });
+    try {
+      const fleets = await (await fetch(`${server.url}/api/fleets`)).json();
+      expect(fleets.fleets[0].name).toBe("old-fleet-20260101000000");
+
+      const disk = await (await fetch(`${server.url}/api/state?fleet=old-fleet-20260101000000`)).json();
+      expect(disk.fleet_name).toBe("t");
+
+      const sess = await (await fetch(`${server.url}/api/session/a?fleet=old-fleet-20260101000000`)).json();
+      expect(sess.entries[0].text).toBe("old peek");
+
+      const missing = await fetch(`${server.url}/api/state?fleet=nope-2026`);
+      expect(missing.status).toBe(404);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("no fleet param falls back to the live fleet", async () => {
+    const f = fleet();
+    const server = await startCanvasServer({ getFleet: () => f, cwd: "/tmp" });
+    try {
+      const state = await (await fetch(`${server.url}/api/state`)).json();
+      expect(state.fleet_name).toBe("t");
+    } finally {
+      await server.close();
+    }
   });
 });

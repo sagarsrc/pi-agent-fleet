@@ -284,8 +284,8 @@ export async function killFleet(target: string): Promise<string> {
 
 let canvas: Promise<CanvasServer> | undefined;
 
-export async function ensureCanvas(): Promise<CanvasServer> {
-  canvas ??= startCanvasServer({ getFleet: () => activeFleet.current });
+export async function ensureCanvas(ctx: ExtensionContext): Promise<CanvasServer> {
+  canvas ??= startCanvasServer({ getFleet: () => activeFleet.current, cwd: ctx.cwd });
   return canvas;
 }
 
