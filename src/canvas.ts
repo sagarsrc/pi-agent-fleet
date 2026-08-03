@@ -221,8 +221,9 @@ function toggleTheme(){
   applyTheme(document.body.className === "light" ? "dark" : "light");
 }
 (function(){
-  var t = null;
-  try { t = localStorage.getItem("fleet-canvas-theme"); } catch(e) {}
+  var qsTheme = new URLSearchParams(location.search).get("theme");
+  var t = qsTheme === "light" || qsTheme === "dark" ? qsTheme : null;
+  try { if(!t) t = localStorage.getItem("fleet-canvas-theme"); } catch(e) {}
   if(!t && window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches) t = "light";
   applyTheme(t || "dark");
 })();
