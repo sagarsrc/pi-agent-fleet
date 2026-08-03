@@ -67,7 +67,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
     name: "fleet_plan",
     label: "Fleet Plan",
     description:
-      "Validate a fleet DAG definition, create its fleet root, and return an ASCII preview. Does NOT launch. Present the preview to the user; call fleet_launch only after they explicitly confirm. Choose models by task difficulty: cheap/fast models for trivial writers and validators, mid-tier coding models for code-run workers, strongest reasoning models for reviewers and synthesizers. When several models fit a tier, vary providers across nodes instead of defaulting to one family. Set worker.model per node to override config.model. All model refs are validated against the live registry — planning fails if any model is unavailable.",
+      "Validate a fleet DAG definition, create its fleet root, and return an ASCII preview. Does NOT launch. PREREQUISITE: if the user's request is prose requirements or a goal rather than an explicit fleet definition, you MUST call fleet_design first and pass its drafted definition here — do not hand-write the fleet JSON yourself. Present the preview to the user; call fleet_launch only after they explicitly confirm. Choose models by task difficulty: cheap/fast models for trivial writers and validators, mid-tier coding models for code-run workers, strongest reasoning models for reviewers and synthesizers. When several models fit a tier, vary providers across nodes instead of defaulting to one family. Set worker.model per node to override config.model. All model refs are validated against the live registry — planning fails if any model is unavailable.",
     promptSnippet: "Plan a DAG-of-agents fleet from a fleet definition without launching it.",
     parameters: Type.Object({
       fleet: FleetSchema,
@@ -247,7 +247,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "fleet_design",
     label: "Fleet Design",
-    description: "Draft a fleet DAG from plain-language requirements. Spawns a planner agent that writes a fleet.json definition, validates it, and returns an ASCII preview with the JSON. Does NOT plan or launch anything. Use this before fleet_plan whenever requirements are prose rather than a ready fleet definition.",
+    description: "Draft a fleet DAG from plain-language requirements — this is the REQUIRED first step whenever the user describes a goal in prose instead of giving an explicit fleet definition. Spawns a planner agent that writes a fleet.json definition, validates it, and returns an ASCII preview with the JSON. Does NOT plan or launch anything. After the user approves the preview, pass the drafted definition to fleet_plan.",
     promptSnippet: "Draft a fleet DAG from plain-language requirements.",
     parameters: Type.Object({
       requirements: Type.String({ description: "Plain-language description of the goal" }),
