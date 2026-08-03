@@ -9,6 +9,9 @@ DAG-of-agents fleets for [pi](https://github.com/earendil-works/pi-coding-agent)
 └─ ○ reviewer (k3) · waiting on builder-relaunch
 ```
 
+![Fleet canvas — live DAG with per-node cost and status](assets/canvas.png)
+![Fleet canvas — click a node to peek its session tail](assets/canvas-node-peek.png)
+
 ## Why
 
 One agent is a tool. A **fleet** is a workflow: researchers feed builders, builders feed reviewers, reviewers gate quality — all visible, all recorded, all contract-checked. Fleets run in-process via pi's SDK: any provider pi is logged into (Claude, Codex, Kimi, …) works per-node.

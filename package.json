@@ -23,7 +23,8 @@
   "pi": {
     "extensions": [
       "./src/index.ts"
-    ]
+    ],
+    "image": "https://raw.githubusercontent.com/sagarsrc/pi-agent-fleet/v0.4.0/assets/canvas.png"
   },
   "license": "MIT",
   "author": "Sagar Sarkale",
@@ -45,6 +46,7 @@
   ],
   "files": [
     "src/",
+    "assets/",
     "examples/",
     "README.md",
     "LICENSE"
