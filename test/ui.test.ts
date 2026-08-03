@@ -106,3 +106,24 @@ describe("widget stats, truncation, spinner", () => {
     expect(lines.some((l) => l.includes("○ c"))).toBe(true);
   });
 });
+
+describe("loop cost fallback", () => {
+  it("shows last-iteration cost for completed nodes when live cost is zeroed", () => {
+    const loopSpec: FleetSpec = {
+      fleet_name: "loop", type: "dag",
+      config: { max_concurrent: 2, model: "m", loop: { gate: "none", max_iterations: 2, lgtm_count: 1 } },
+      workers: [{ id: "a", type: "research", task: "t", depends_on: [], outputs: [] }],
+    };
+    let s = initFleetState(loopSpec);
+    s = patchNode("/x", s, "a", { status: "completed", turns: 3, tokens: 900, cost_usd_estimate: 0.05 });
+    // simulate snapshotIteration zeroing live cost and archiving the old one
+    const archived = { ...s.nodes.a };
+    s = {
+      ...s,
+      nodes: { a: { ...s.nodes.a, cost_usd_estimate: 0 } },
+      iterations: [{ n: 1, verdict: null, verdict_body: null, started_at: "t0", ended_at: "t1", nodes: { a: archived } }],
+    };
+    const lines = buildWidgetLines(loopSpec, s);
+    expect(lines[1]).toContain("$0.05");
+  });
+});

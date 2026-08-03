@@ -37,8 +37,13 @@ export function buildWidgetLines(spec: FleetSpec, state: FleetState, opts: Widge
 
   const line = (w: WorkerSpec, branch: string): string => {
     const n: NodeState = state.nodes[w.id] ?? { status: "pending", turns: 0, tokens: 0, cost_usd_estimate: 0, produced_outputs: [] };
+    // loop snapshots zero live per-node cost (archived into iteration totals) — fall back to the last snapshot so completed nodes keep their cost visible
+    const lastIter = state.iterations.length > 0 ? state.iterations[state.iterations.length - 1] : undefined;
+    const cost = n.cost_usd_estimate > 0 || n.status === "running"
+      ? n.cost_usd_estimate
+      : (lastIter?.nodes[w.id]?.cost_usd_estimate ?? n.cost_usd_estimate);
     const detail = DETAIL_STATUSES.has(n.status)
-      ? ` · ${n.turns} turns · ${(n.tokens / 1000).toFixed(1)}k tok · $${n.cost_usd_estimate.toFixed(2)}`
+      ? ` · ${n.turns} turns · ${(n.tokens / 1000).toFixed(1)}k tok · $${cost.toFixed(2)}`
       : "";
     const note = n.status_note ? ` · ${n.status_note}` : "";
     const model = w.model ?? spec.config.model ?? "(default)";
