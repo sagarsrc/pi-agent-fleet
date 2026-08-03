@@ -1,0 +1,669 @@
+import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { createRoot } from "react-dom/client";
+import {
+  Background,
+  BackgroundVariant,
+  Controls,
+  Handle,
+  MarkerType,
+  MiniMap,
+  Position,
+  ReactFlow,
+  ReactFlowProvider,
+  useEdgesState,
+  useNodesState,
+  useReactFlow,
+} from "@xyflow/react";
+import type { Edge, Node, NodeProps } from "@xyflow/react";
+
+/* ---------- payload types (mirror canvas.ts) ---------- */
+interface CanvasNodeView {
+  id: string;
+  type: string;
+  task: string;
+  status: string;
+  model: string;
+  effort?: string;
+  turns: number;
+  tokens: number;
+  cost_usd_estimate: number;
+  status_note?: string;
+  produced_outputs: string[];
+  outputs: Array<{ path: string; kind: string; required: boolean }>;
+  depends_on: string[];
+  iterate: boolean;
+  worktree: boolean;
+}
+interface CanvasPayload {
+  fleet_name: string;
+  status: string;
+  created_at: string;
+  iteration: number;
+  lgtm_streak: number;
+  paused: boolean;
+  cost_usd_estimate: number;
+  demo?: boolean;
+  empty?: boolean;
+  loop?: { gate: string; max_iterations: number; lgtm_count: number };
+  config: { max_concurrent: number; model?: string; effort?: string; warn_cost_usd?: number };
+  nodes: CanvasNodeView[];
+  edges: Array<{ from: string; to: string }>;
+  iterations: Array<{ n: number; verdict: string | null; cost: number; tokens: number; duration_ms: number }>;
+  generated_at: string;
+}
+interface FleetInfo { name: string; status: string }
+interface SessionEntry { role: string; text: string }
+interface SessionResp { entries: SessionEntry[]; task?: string }
+
+/* ---------- helpers ---------- */
+const NODE_W = 284;
+function statusClass(s: string): string {
+  return "st-" + s.replace(/\s+/g, "_");
+}
+function cssVar(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#8b949e";
+}
+function minimapColor(status: string): string {
+  if (status === "completed") return cssVar("--ok");
+  if (status === "running") return cssVar("--accent");
+  if (status === "failed" || status === "contract_failed") return cssVar("--bad");
+  if (status === "killed" || status === "blocked") return cssVar("--wire");
+  return cssVar("--line");
+}
+function j<T>(u: string): Promise<T> {
+  return fetch(u).then((r) => {
+    if (!r.ok) throw new Error(String(r.status));
+    return r.json() as Promise<T>;
+  });
+}
+
+/* topo-layer layout, ported from the legacy canvas */
+function topoLayers(nodes: CanvasNodeView[], edges: Array<{ from: string; to: string }>): string[][] {
+  const ids = nodes.map((n) => n.id);
+  const indeg: Record<string, number> = {};
+  const rev: Record<string, string[]> = {};
+  ids.forEach((i) => { indeg[i] = 0; rev[i] = []; });
+  edges.forEach((e) => { if (e.from in indeg) { indeg[e.to]++; rev[e.from].push(e.to); } });
+  const layers: string[][] = [];
+  let cur = ids.filter((i) => indeg[i] === 0);
+  const seen: Record<string, boolean> = {};
+  while (cur.length) {
+    layers.push(cur);
+    cur.forEach((i) => { seen[i] = true; });
+    const next: string[] = [];
+    cur.forEach((i) => rev[i].forEach((m) => { if (--indeg[m] === 0) next.push(m); }));
+    cur = next;
+  }
+  ids.forEach((i) => { if (!seen[i]) { layers.push([i]); seen[i] = true; } });
+  return layers;
+}
+function median(arr: number[]): number {
+  const s = arr.slice().sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+function reduceCrossings(layers: string[][], edges: Array<{ from: string; to: string }>): string[][] {
+  for (let li = 1; li < layers.length; li++) {
+    const prevPos: Record<string, number> = {};
+    layers[li - 1].forEach((id, i) => { prevPos[id] = i; });
+    const key = (id: string) => median(edges.filter((e) => e.to === id).map((e) => prevPos[e.from] ?? 0));
+    layers[li].sort((a, b) => key(a) - key(b));
+  }
+  return layers;
+}
+function computePositions(p: CanvasPayload): Record<string, { x: number; y: number }> {
+  const layers = reduceCrossings(topoLayers(p.nodes, p.edges), p.edges);
+  const pos: Record<string, { x: number; y: number }> = {};
+  layers.forEach((layer, li) => layer.forEach((id, ni) => { pos[id] = { x: li * 360, y: ni * 170 }; }));
+  return pos;
+}
+
+/* ---------- custom node ---------- */
+type FleetNodeData = {
+  view: CanvasNodeView;
+  selected: boolean;
+  demo: boolean;
+  gate: boolean;
+  fleet: string | null;
+  onOpen: (id: string) => void;
+};
+
+function FleetNode({ data }: NodeProps<Node<FleetNodeData>>) {
+  const { view: n, selected } = data;
+  const running = n.status === "running";
+
+  const flags: Array<{ label: string; title: string }> = [];
+  if (data.gate) flags.push({ label: "⟳ loop gate", title: "Reviewer gate: its verdict decides whether the fleet iterates again" });
+  if (n.iterate === false) flags.push({ label: "once", title: "Runs once; not re-run on loop iterations" });
+  if (n.worktree) flags.push({ label: "worktree", title: "Runs in an isolated git worktree" });
+
+  const activate = () => { data.onOpen(n.id); };
+
+  const isFailed = n.status === "failed" || n.status === "contract_failed";
+  const missingRequired = n.outputs.filter((o) => o.required && !n.produced_outputs.includes(o.path)).map((o) => o.path);
+  const failReason = isFailed && !n.status_note
+    ? (missingRequired.length ? `missing required output: ${missingRequired.join(", ")}` : "worker did not complete — open for details")
+    : "";
+  const ariaLabel =
+    `${n.id}, ${n.type}, ${n.status}, ${n.turns} turns, ${(Number(n.tokens || 0) / 1000).toFixed(1)}k tokens, ` +
+    `$${Number(n.cost_usd_estimate || 0).toFixed(2)}${n.status_note ? `, ${n.status_note}` : failReason ? `, ${failReason}` : ""}`;
+
+  return (
+    <div
+      className={"node " + statusClass(n.status) + (selected ? " sel" : "")}
+      data-node-id={n.id}
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      aria-label={ariaLabel}
+      onClick={activate}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(); } }}
+    >
+      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={Position.Bottom} id="loopIn" />
+      <div className="card-body">
+        <div className="node-header">
+          <span className={"node-dot" + (running ? " pulse" : "")} style={{ background: minimapColor(n.status) }} aria-hidden="true" />
+          <span className="id" title={n.id}>{n.id}</span>
+          <span className="badge">{n.type}</span>
+        </div>
+        <div className="status-row">
+          {running && <span className="spinner" />}
+          <span className="st-word">{n.status}</span>
+          {n.effort && <><span>·</span><span>{n.effort}</span></>}
+          <span>·</span><span>{n.model}</span>
+        </div>
+        <div className="stats">
+          {(n.turns | 0)} turns · {(Number(n.tokens || 0) / 1000).toFixed(1)}k tok · ${Number(n.cost_usd_estimate || 0).toFixed(2)}
+        </div>
+        {n.outputs?.length > 0 && (
+          <div className="outputs">
+            {n.outputs.map((o, i) => (
+              <span className="out-chip" key={i}>{o.path} · {o.kind}</span>
+            ))}
+          </div>
+        )}
+        {flags.length > 0 && (
+          <div className="flags">
+            {flags.map((f, i) => (
+              <span key={i} title={f.title}>{i > 0 ? " · " : ""}{f.label}</span>
+            ))}
+          </div>
+        )}
+        {n.status_note && <div className="note">{n.status_note}</div>}
+        {failReason && <div className="fail-reason">{failReason}</div>}
+      </div>
+      <Handle type="source" position={Position.Right} />
+      <Handle type="source" position={Position.Bottom} id="loop" />
+    </div>
+  );
+}
+const nodeTypes = { fleet: FleetNode };
+
+/* ---------- side panel ---------- */
+function SidePanel({ fleet, demo, selected, task, onClose }: { fleet: string | null; demo: boolean; selected: string | null; task: string | null; onClose: () => void }) {
+  const [resp, setResp] = useState<SessionResp | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  // move focus into the panel on open (silently, no visible ring); restore to the node on close
+  useEffect(() => { if (selected) boxRef.current?.focus(); }, [selected]);
+  const closeAndRestore = () => {
+    const id = selected;
+    onClose();
+    if (id) (document.querySelector(`.node[data-node-id="${id}"]`) as HTMLElement | null)?.focus();
+  };
+
+  useEffect(() => {
+    if (!selected || demo) { setResp(null); return; }
+    let alive = true;
+    const load = () => {
+      const q = fleet ? "&fleet=" + encodeURIComponent(fleet) : "";
+      j<SessionResp>("/api/session/" + selected + "?tail=30" + q).then((r) => alive && setResp(r)).catch(() => {});
+    };
+    load();
+    const t = setInterval(load, 2000);
+    return () => { alive = false; clearInterval(t); };
+  }, [selected, demo, fleet]);
+
+  // close on Escape while open (and restore focus to the node)
+  useEffect(() => {
+    if (!selected) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const id = selected;
+      onClose();
+      if (id) (document.querySelector(`.node[data-node-id="${id}"]`) as HTMLElement | null)?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selected, onClose]);
+
+  // follow the latest transcript turn when the operator is already near the bottom
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (nearBottom) el.scrollTop = el.scrollHeight;
+  }, [resp]);
+
+  if (!selected) return null;
+  return (
+    <div id="side" className="open" ref={boxRef} tabIndex={-1} role="complementary" aria-label={`${selected} session`}>
+      <div className="side-head">
+        <span className="meta"># {selected} — session</span>
+        <button className="icon-btn" onClick={closeAndRestore} aria-label="Close session panel" title="Close (Esc)">×</button>
+      </div>
+      {(resp?.task || task) && (
+        <div className="taskbox-side">
+          <div className="taskbox-side-label">task</div>
+          {resp?.task || task}
+        </div>
+      )}
+      {demo && <div className="msg">Session transcripts hidden in demo mode.</div>}
+      {(resp?.entries ?? []).map((e, i) => (
+        <div className="msg" key={i}>
+          <div className={"role role-" + e.role}>{e.role}</div>
+          {e.text}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ---------- fleet picker (custom dropdown) ---------- */
+type FpOption = { value: string | null; name: string; status: string };
+
+function FleetPicker({ fleets, value, onChange }: { fleets: FleetInfo[]; value: string | null; onChange: (v: string | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [active, setActive] = useState(0);
+  const ref = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    setTimeout(() => searchRef.current?.focus(), 0);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const filtered = useMemo(
+    () => fleets.filter((f) => f.name.toLowerCase().includes(q.toLowerCase())),
+    [fleets, q],
+  );
+  const options: FpOption[] = useMemo(
+    () => [{ value: null, name: "live fleet", status: "live" }, ...filtered.map((f) => ({ value: f.name, name: f.name, status: f.status }))],
+    [filtered],
+  );
+  const current = fleets.find((f) => f.name === value);
+  const pick = (v: string | null) => { onChange(v); setOpen(false); setQ(""); triggerRef.current?.focus(); };
+
+  // keep the active option in range and scrolled into view
+  useEffect(() => { setActive((a) => Math.min(Math.max(a, 0), Math.max(options.length - 1, 0))); }, [options.length]);
+  useEffect(() => {
+    if (!open) return;
+    listRef.current?.querySelector<HTMLElement>(`[data-i="${active}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [active, open]);
+
+  const onKey = (e: ReactKeyboardEvent) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); setActive((a) => Math.min(a + 1, options.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); }
+    else if (e.key === "Home") { e.preventDefault(); setActive(0); }
+    else if (e.key === "End") { e.preventDefault(); setActive(options.length - 1); }
+    else if (e.key === "Enter") { e.preventDefault(); if (options[active]) pick(options[active].value); }
+    else if (e.key === "Escape") { e.preventDefault(); setOpen(false); triggerRef.current?.focus(); }
+  };
+
+  const listId = "fp-listbox";
+  return (
+    <div className="fp" ref={ref}>
+      <button
+        ref={triggerRef}
+        className="fp-trigger"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-controls={listId}
+        aria-expanded={open}
+        aria-label={`Fleet: ${current ? `${current.name}, ${current.status}` : "live fleet"}. Change fleet`}
+      >
+        {current ? <span className="dot" style={{ background: minimapColor(current.status) }} aria-hidden="true" /> : <span className="dot live" aria-hidden="true" />}
+        <span className="fp-label">{current ? current.name : "live fleet"}</span>
+        {current && <span className="fp-trigger-status">{current.status}</span>}
+        <span className="fp-caret" aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <div className="fp-menu">
+          <input
+            ref={searchRef}
+            className="fp-search"
+            placeholder="filter fleets…"
+            value={q}
+            onChange={(e) => { setQ(e.target.value); setActive(0); }}
+            onKeyDown={onKey}
+            role="combobox"
+            aria-expanded="true"
+            aria-controls={listId}
+            aria-activedescendant={`fp-opt-${active}`}
+            aria-autocomplete="list"
+            aria-label="Filter fleets"
+          />
+          <div className="fp-list" id={listId} role="listbox" ref={listRef} aria-label="Fleets">
+            {options.map((o, i) => (
+              <div
+                key={o.value ?? "__live"}
+                id={`fp-opt-${i}`}
+                data-i={i}
+                role="option"
+                aria-selected={value === o.value}
+                className={"fp-item" + (value === o.value ? " selected" : "") + (i === active ? " active" : "")}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => pick(o.value)}
+              >
+                {o.value === null
+                  ? <span className="dot live" aria-hidden="true" />
+                  : <span className="dot" style={{ background: minimapColor(o.status) }} aria-hidden="true" />}
+                <span className="fp-name" title={o.name}>{o.name}</span>
+                {o.value !== null && <span className="fp-status">{o.status}</span>}
+              </div>
+            ))}
+            {options.length === 1 && q && <div className="fp-empty">no match</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- theme ---------- */
+function currentTheme(): string {
+  return document.documentElement.getAttribute("data-theme") || "dark";
+}
+function applyTheme(t: string) {
+  document.documentElement.setAttribute("data-theme", t);
+  document.body.className = t;
+  try { localStorage.setItem("fleet-canvas-theme", t); } catch { /* ignore */ }
+}
+
+/* ---------- flow ---------- */
+function Flow() {
+  const qs = new URLSearchParams(location.search);
+  const [demo, setDemo] = useState(qs.get("demo") === "1");
+  const [fleet, setFleet] = useState<string | null>(qs.get("fleet"));
+  const [fleets, setFleets] = useState<FleetInfo[]>([]);
+  const [payload, setPayload] = useState<CanvasPayload | null>(null);
+  const [selected, setSelected] = useState<string | null>(qs.get("node"));
+  const [conn, setConn] = useState<string>("");
+  const [legendOpen, setLegendOpen] = useState(false);
+  const [nonce, setNonce] = useState(0);
+  const [demoFallback, setDemoFallback] = useState(false);
+  const { fitView } = useReactFlow();
+  const resetView = useCallback(() => fitView({ padding: 0.2, duration: 300 }), [fitView]);
+
+  // keyboard: F = fit graph to view, R = reset (same), ignoring typing in inputs
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (e.key === "f" || e.key === "F" || e.key === "r" || e.key === "R") { e.preventDefault(); resetView(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [resetView]);
+
+  useEffect(() => {
+    j<{ fleets: FleetInfo[] }>("/api/fleets").then((r) => setFleets(r.fleets)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    const loadDemo = () => j<CanvasPayload>("/api/demo")
+      .then((d) => { if (!alive) return; setConn(""); setPayload(d); setDemoFallback(!demo); })
+      .catch(() => { if (!alive) return; setPayload(null); setDemoFallback(false); });
+    const tick = () => {
+      if (demo) { loadDemo(); return; }
+      j<CanvasPayload>("/api/state" + (fleet ? "?fleet=" + encodeURIComponent(fleet) : ""))
+        .then((s) => {
+          if (!alive) return;
+          setConn("");
+          // nothing live and no specific past fleet chosen -> show the baked sample fleet
+          if (s.empty && !fleet) { loadDemo(); return; }
+          setDemoFallback(false);
+          setPayload(s.empty ? null : s);
+        })
+        .catch(() => { if (!alive) return; setConn(fleet ? "fleet unavailable" : "connection lost"); });
+    };
+    tick();
+    const t = setInterval(tick, 1500);
+    return () => { alive = false; clearInterval(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demo, fleet, nonce]);
+
+  const onOpen = useCallback((id: string) => setSelected(id), []);
+
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node<FleetNodeData>>([]);
+  const [edges, setEdges] = useEdgesState<Edge>([]);
+  const idsKey = payload ? payload.nodes.map((n) => n.id).sort().join(",") : "";
+
+  // Rebuild topology only when the node set changes; otherwise patch data in place
+  // so drag positions and measured sizes (needed by the minimap) survive polling.
+  useEffect(() => {
+    if (!payload) { setNodes([]); return; }
+    const pos = computePositions(payload);
+    const gateId = payload.loop
+      ? (payload.nodes.find((n) => n.id === payload.loop!.gate) ?? payload.nodes.find((n) => n.type === payload.loop!.gate))?.id
+      : undefined;
+    setNodes((prev) => {
+      const byId: Record<string, Node<FleetNodeData>> = {};
+      prev.forEach((n) => { byId[n.id] = n; });
+      return payload.nodes.map((v) => {
+        const existing = byId[v.id];
+        const data: FleetNodeData = { view: v, selected: selected === v.id, demo, gate: v.id === gateId, fleet, onOpen };
+        return existing
+          ? { ...existing, data }
+          : { id: v.id, type: "fleet", position: pos[v.id] ?? { x: 0, y: 0 }, data, width: NODE_W };
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idsKey, payload, selected, demo, fleet, onOpen, setNodes]);
+
+  useEffect(() => {
+    if (!payload) { setEdges([]); return; }
+    const forward: Edge[] = payload.edges.map((e, i) => ({
+      id: "e" + i,
+      source: e.from,
+      target: e.to,
+      animated: payload.nodes.find((n) => n.id === e.to)?.status === "running",
+    }));
+
+    // feedback loop: the gate node re-triggers the iterate roots each iteration
+    const loop = payload.loop;
+    const gate = loop
+      ? (payload.nodes.find((n) => n.id === loop.gate) ?? payload.nodes.find((n) => n.type === loop.gate))
+      : undefined;
+    const roots = payload.nodes.filter((n) => n.iterate && n.depends_on.length === 0);
+    const looping = payload.status === "running" && !!loop && payload.iteration < loop.max_iterations && payload.lgtm_streak < loop.lgtm_count;
+    const loopEdges: Edge[] = gate && loop
+      ? roots.map((r, i) => ({
+          id: "loop" + i,
+          source: gate.id,
+          target: r.id,
+          sourceHandle: "loop",
+          targetHandle: "loopIn",
+          type: "smoothstep",
+          pathOptions: { borderRadius: 12 },
+          animated: looping,
+          zIndex: 0,
+          label: i === 0 ? `iterate ${payload.iteration}/${loop.max_iterations}` : undefined,
+          labelStyle: { fill: "var(--warn)", fontSize: 11, fontWeight: 600 },
+          labelBgStyle: { fill: "var(--bg)", fillOpacity: 0.9 },
+          labelBgPadding: [4, 2] as [number, number],
+          labelBgBorderRadius: 4,
+          style: { stroke: "var(--warn)", strokeDasharray: "5 4", strokeWidth: 1.5, opacity: 0.65 },
+          markerEnd: { type: MarkerType.ArrowClosed, color: "var(--warn)" } as Edge["markerEnd"],
+        }))
+      : [];
+    setEdges([...loopEdges, ...forward]);
+  }, [payload, setEdges]);
+
+  const done = payload ? payload.nodes.filter((n) => n.status === "completed").length : 0;
+  const failed = payload ? payload.nodes.filter((n) => n.status === "failed" || n.status === "contract_failed") : [];
+  const running = payload ? payload.nodes.filter((n) => n.status === "running").length : 0;
+  const cycleFailed = () => {
+    if (!failed.length) return;
+    const cur = failed.findIndex((f) => f.id === selected);
+    setSelected(failed[(cur + 1) % failed.length].id);
+  };
+
+  return (
+    <>
+      <header>
+        <span className="name">fleet canvas</span>
+        <FleetPicker
+          fleets={fleets}
+          value={fleet}
+          onChange={(v) => { setFleet(v); setSelected(null); try { localStorage.setItem("fleet-canvas-fleet", v ?? ""); } catch { /* ignore */ } }}
+        />
+        <span id="hdr">
+          {conn ? (
+            <span className="conn">
+              <span className="pill pill-bad">{conn === "connection lost" ? "Canvas server unreachable" : "Fleet unavailable"}</span>
+              <button className="link-btn" onClick={() => { setConn(""); setNonce((n) => n + 1); }}>Retry</button>
+            </span>
+          ) : payload ? (
+            <>
+              <span className="fleet-title">{payload.fleet_name}</span>
+              {demoFallback
+                ? <span className="pill" title="No fleet is live — showing a sample fleet">sample</span>
+                : payload.demo && <span className="pill">demo</span>}
+              <span className={"pill status-" + payload.status}>{payload.status}</span>
+              {payload.paused && <span className="pill">paused</span>}
+              {running > 0 && <span className="stat"><span className="dot dot-run" aria-hidden="true" />{running} running</span>}
+              <span className="stat">{done}/{payload.nodes.length} done</span>
+              {failed.length > 0 && (
+                <button
+                  className="pill pill-bad pill-btn"
+                  onClick={cycleFailed}
+                  title={failed.length > 1 ? "Jump to next failed worker" : "Jump to the failed worker"}
+                >⚠ {failed.length} failed</button>
+              )}
+              <span className="stat" title="Estimated spend so far">${payload.cost_usd_estimate.toFixed(2)}</span>
+              {payload.loop && (
+                <span className="stat" title={`Reviewer-gated loop: re-runs up to ${payload.loop.max_iterations}× until ${payload.loop.lgtm_count} consecutive LGTM verdicts`}>
+                  iter {payload.iteration}/{payload.loop.max_iterations} · streak {payload.lgtm_streak}/{payload.loop.lgtm_count}
+                </span>
+              )}
+            </>
+          ) : <span className="stat meta">no live fleet</span>}
+        </span>
+        <span className="spacer" />
+        <button onClick={resetView} title="Fit graph to view (F)">reset view</button>
+        <button className={legendOpen ? "toggled" : ""} aria-pressed={legendOpen} onClick={() => setLegendOpen((v) => !v)}>legend</button>
+        <button aria-pressed={demo} onClick={() => { setDemo((v) => !v); setSelected(null); }}>{demo ? "live" : "demo"}</button>
+        <button onClick={() => applyTheme(currentTheme() === "light" ? "dark" : "light")}>theme</button>
+      </header>
+      <main>
+        <div id="stage">
+          <ReactFlow
+            key={(demo ? "demo" : "live") + ":" + (fleet ?? "") + ":" + (demoFallback ? "s" : "")}
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            nodeTypes={nodeTypes}
+            fitView
+            fitViewOptions={{ padding: 0.2 }}
+            minZoom={0.2}
+            maxZoom={2.5}
+            proOptions={{ hideAttribution: true }}
+            defaultEdgeOptions={{ type: "smoothstep", pathOptions: { borderRadius: 18 } }}
+          >
+            <Background variant={BackgroundVariant.Dots} gap={22} size={1} />
+            <Controls showInteractive={false} />
+            <MiniMap pannable zoomable nodeColor={(n) => minimapColor((n.data as FleetNodeData).view.status)} />
+          </ReactFlow>
+          {legendOpen && <Legend hasLoop={!!payload?.loop} onClose={() => setLegendOpen(false)} />}
+          {!payload && !conn && !demo && <EmptyState hasFleets={fleets.length > 0} onDemo={() => setDemo(true)} />}
+        </div>
+        <SidePanel
+          fleet={fleet}
+          demo={demo || demoFallback}
+          selected={selected}
+          task={payload?.nodes.find((n) => n.id === selected)?.task ?? null}
+          onClose={() => setSelected(null)}
+        />
+      </main>
+    </>
+  );
+}
+
+/* ---------- legend ---------- */
+const LEGEND_ROWS: Array<{ status: string; label: string }> = [
+  { status: "running", label: "running" },
+  { status: "completed", label: "completed" },
+  { status: "failed", label: "failed / contract failed" },
+  { status: "blocked", label: "blocked / killed" },
+  { status: "pending", label: "pending / ready" },
+];
+function Legend({ hasLoop, onClose }: { hasLoop: boolean; onClose: () => void }) {
+  return (
+    <div className="legend" role="region" aria-label="Status legend">
+      <div className="legend-head">
+        <span>status</span>
+        <button className="icon-btn sm" onClick={onClose} aria-label="Close legend" title="Close">×</button>
+      </div>
+      {LEGEND_ROWS.map((r) => (
+        <div className="legend-row" key={r.status}>
+          <span className={"swatch " + statusClass(r.status)} aria-hidden="true" />
+          <span>{r.label}</span>
+        </div>
+      ))}
+      {hasLoop && (
+        <div className="legend-row legend-loop">
+          <span className="swatch-line" aria-hidden="true" />
+          <span>iteration loop (gate → roots)</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- empty state ---------- */
+function EmptyState({ hasFleets, onDemo }: { hasFleets: boolean; onDemo: () => void }) {
+  return (
+    <div className="empty">
+      <div className="empty-title">No fleet running</div>
+      <p className="empty-body">
+        This canvas shows a live DAG of agent workers — status, tokens, cost, and reviewer-gated iteration loops — as a fleet runs.
+      </p>
+      <ul className="empty-steps">
+        <li>Start a fleet from pi with <code>/fleet</code>, then it appears here automatically.</li>
+        {hasFleets
+          ? <li>Or open a past run from the <strong>fleet selector</strong> at the top left.</li>
+          : <li>Past runs will be listed in the <strong>fleet selector</strong> once you have some.</li>}
+      </ul>
+      <button className="empty-cta" onClick={onDemo}>Explore a demo fleet</button>
+    </div>
+  );
+}
+
+/* ---------- boot ---------- */
+(function initTheme() {
+  const qs = new URLSearchParams(location.search);
+  let t = qs.get("theme");
+  if (t !== "light" && t !== "dark") {
+    try { t = localStorage.getItem("fleet-canvas-theme"); } catch { /* ignore */ }
+    if (t !== "light" && t !== "dark" && window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches) t = "light";
+  }
+  applyTheme(t === "light" || t === "dark" ? t : "dark");
+})();
+
+const root = createRoot(document.getElementById("root")!);
+root.render(
+  <StrictMode>
+    <ReactFlowProvider>
+      <Flow />
+    </ReactFlowProvider>
+  </StrictMode>,
+);

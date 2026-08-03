@@ -87,11 +87,14 @@ describe("parseSessionTail", () => {
 });
 
 describe("renderCanvasPage", () => {
-  it("embeds the polling app", () => {
-    const html = renderCanvasPage();
+  it("embeds the polling app", async () => {
+    const html = await renderCanvasPage();
     expect(html).toContain("/api/state");
     expect(html).toContain("/api/session/");
+    // self-contained: React + @xyflow bundle inlined, no external script/style hosts
     expect(html).not.toContain("http://cdn");
+    expect(html).not.toContain("<script src");
+    expect(html).not.toContain("<link ");
   });
 });
 
@@ -144,11 +147,13 @@ describe("demo endpoint", () => {
     const server = await startCanvasServer({ getFleet: () => undefined, cwd: "/tmp" });
     try {
       const demo = await (await fetch(`${server.url}/api/demo`)).json();
-      expect(demo.fleet_name).toBe("demo-fleet");
+      // demo is a baked snapshot of a real fleet's structure
+      expect(typeof demo.fleet_name).toBe("string");
+      expect(demo.fleet_name.length).toBeGreaterThan(0);
       expect(demo.nodes.length).toBeGreaterThan(1);
       expect(demo.demo).toBe(true);
       expect(demo.edges.length).toBeGreaterThan(0);
-      expect(demo.iterations.length).toBe(2);
+      expect(demo.generated_at).toBeTruthy();
     } finally {
       await server.close();
     }
@@ -229,27 +234,30 @@ describe("readDiskFleet + listFleetRoots", () => {
   });
 });
 
-describe("page v2", () => {
-  it("has infinite canvas, themes, fleet picker, rich cards", () => {
-    const html = renderCanvasPage();
-    expect(html).toContain("zoomAt");
-    expect(html).toContain("fitView");
-    expect(html).toContain("MIN_ZOOM");
-    expect(html).toContain("MAX_ZOOM");
-    expect(html).toContain("fleetSel");
-    expect(html).toContain("body.light");
+describe("page v3 (@xyflow/react)", () => {
+  it("bundles the react-flow canvas with themes, fleet picker, rich cards", async () => {
+    const html = await renderCanvasPage();
+    // React app mounts into #root
+    expect(html).toContain('id="root"');
+    expect(html).toContain("createRoot");
+    // @xyflow/react bundled + its stylesheet inlined
+    expect(html).toContain("react-flow");
+    expect(html).toContain(".react-flow__node");
+    // theming, fleet picker, rich card styles preserved
     expect(html).toContain("prefers-color-scheme");
+    expect(html).toContain("data-theme");
     expect(html).toContain("out-chip");
-    expect(html).toContain('qs.get("fleet")');
-    expect(html).toContain('qs.get("node")');
+    // deep-links honored by the client
+    expect(html).toContain('"fleet"');
+    expect(html).toContain('"node"');
   });
 
-  it("keeps legacy markers", () => {
-    const html = renderCanvasPage();
+  it("keeps api markers and stays self-contained", async () => {
+    const html = await renderCanvasPage();
     expect(html).toContain("/api/state");
     expect(html).toContain("/api/fleets");
     expect(html).toContain("/api/session/");
-    expect(html).not.toContain("`");
+    expect(html).not.toContain("http://cdn");
   });
 });
 

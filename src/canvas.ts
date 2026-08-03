@@ -1,8 +1,10 @@
 import { execFile } from "node:child_process";
+import { createRequire } from "node:module";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { ActiveFleet } from "./controller.js";
 import { readState } from "./state.js";
@@ -96,95 +98,380 @@ export function buildCanvasPayload(fleet: ActiveFleet): CanvasPayload {
   };
 }
 
+/** Baked snapshot of a real fleet (quickcall-zero-to-hero) used as the demo /
+    fallback view when no fleet is live. Structure is hardcoded, not read from disk. */
+const DEMO_FLEET = (
+{
+  "fleet_name": "quickcall-zero-to-hero",
+  "status": "running",
+  "created_at": "2026-08-02T12:49:37.320Z",
+  "iteration": 1,
+  "lgtm_streak": 0,
+  "paused": false,
+  "cost_usd_estimate": 13.8376735,
+  "loop": {
+    "gate": "reviewer",
+    "max_iterations": 2,
+    "lgtm_count": 1
+  },
+  "config": {
+    "max_concurrent": 4,
+    "model": "gpt-5.4",
+    "warn_cost_usd": 50
+  },
+  "nodes": [
+    {
+      "id": "l1-methods",
+      "type": "research",
+      "task": "You are L1 (lay-of-the-land) researcher in a 2-layer research fleet. Mission context: founder built QuickCall — a daemon watching engineers' AI coding-agent sessions (Claude Code, Cursor, Codex), extracting team conventions, capturing ac…",
+      "status": "completed",
+      "model": "gpt-5.4",
+      "turns": 84,
+      "tokens": 3446330,
+      "cost_usd_estimate": 1.7322095000000008,
+      "produced_outputs": [
+        "output/l1-methods.md"
+      ],
+      "outputs": [
+        {
+          "path": "output/l1-methods.md",
+          "kind": "markdown",
+          "required": true
+        }
+      ],
+      "depends_on": [],
+      "iterate": true,
+      "worktree": false
+    },
+    {
+      "id": "l1-models-data",
+      "type": "research",
+      "task": "You are L1 (lay-of-the-land) researcher in a 2-layer fleet. Mission context: founder built QuickCall — daemon watching engineers' AI coding-agent sessions, capturing accept/reject signals and human corrections on agent output. Pitch in 2…",
+      "status": "completed",
+      "model": "gpt-5.4",
+      "turns": 30,
+      "tokens": 3795144,
+      "cost_usd_estimate": 2.4356045,
+      "produced_outputs": [
+        "output/l1-models-data.md"
+      ],
+      "outputs": [
+        {
+          "path": "output/l1-models-data.md",
+          "kind": "markdown",
+          "required": true
+        }
+      ],
+      "depends_on": [],
+      "iterate": true,
+      "worktree": false
+    },
+    {
+      "id": "l1-economics",
+      "type": "research",
+      "task": "You are L1 (lay-of-the-land) researcher in a 2-layer fleet. Context: founder pitching Head of AI at a foundation lab in 2 days — post-training open code models on preference traces from QuickCall (daemon capturing accept/reject/correctio…",
+      "status": "completed",
+      "model": "gpt-5.4",
+      "turns": 77,
+      "tokens": 2852546,
+      "cost_usd_estimate": 1.447467,
+      "produced_outputs": [
+        "output/l1-economics.md"
+      ],
+      "outputs": [
+        {
+          "path": "output/l1-economics.md",
+          "kind": "markdown",
+          "required": true
+        }
+      ],
+      "depends_on": [],
+      "iterate": true,
+      "worktree": false
+    },
+    {
+      "id": "l1-market",
+      "type": "research",
+      "task": "You are L1 (lay-of-the-land) researcher in a 2-layer fleet. Context: founder pitching Head of AI at a foundation lab in 2 days. Startup QuickCall: daemon on dev machines capturing AI coding-agent sessions → team conventions + accept/reje…",
+      "status": "completed",
+      "model": "gpt-5.4",
+      "turns": 28,
+      "tokens": 1473836,
+      "cost_usd_estimate": 1.2037,
+      "produced_outputs": [
+        "output/l1-market.md"
+      ],
+      "outputs": [
+        {
+          "path": "output/l1-market.md",
+          "kind": "markdown",
+          "required": true
+        }
+      ],
+      "depends_on": [],
+      "iterate": true,
+      "worktree": false
+    },
+    {
+      "id": "l2-deep-methods",
+      "type": "research",
+      "task": "You are L2 (double-down) researcher in a 2-layer fleet. Context: founder pitching Head of AI at a foundation lab in 2 days — post-training open code models on preference traces from QuickCall (daemon capturing accept/reject/corrections f…",
+      "status": "completed",
+      "model": "gpt-5.4",
+      "turns": 88,
+      "tokens": 5299748,
+      "cost_usd_estimate": 1.9066499999999997,
+      "produced_outputs": [
+        "output/l2-deep-methods.md"
+      ],
+      "outputs": [
+        {
+          "path": "output/l2-deep-methods.md",
+          "kind": "markdown",
+          "required": true
+        }
+      ],
+      "depends_on": [
+        "l1-methods",
+        "l1-models-data",
+        "l1-economics",
+        "l1-market"
+      ],
+      "iterate": true,
+      "worktree": false
+    },
+    {
+      "id": "l2-deep-data",
+      "type": "research",
+      "task": "You are L2 (double-down) researcher in a 2-layer fleet. Context: founder pitching Head of AI at a foundation lab in 2 days — post-training open code models on preference traces from QuickCall. QuickCall daemon captures: agent suggestions…",
+      "status": "completed",
+      "model": "gpt-5.4",
+      "turns": 50,
+      "tokens": 5052879,
+      "cost_usd_estimate": 2.2376524999999994,
+      "produced_outputs": [
+        "output/l2-deep-data.md"
+      ],
+      "outputs": [
+        {
+          "path": "output/l2-deep-data.md",
+          "kind": "markdown",
+          "required": true
+        }
+      ],
+      "depends_on": [
+        "l1-methods",
+        "l1-models-data",
+        "l1-economics",
+        "l1-market"
+      ],
+      "iterate": true,
+      "worktree": false
+    },
+    {
+      "id": "l2-deep-pilot",
+      "type": "research",
+      "task": "You are L2 (double-down) researcher in a 2-layer fleet. Context: founder pitching Head of AI at a foundation lab in 2 days — post-training open code models on preference traces from QuickCall. L1 surveys at workers/l1-*/output/l1-*.md — …",
+      "status": "completed",
+      "model": "gpt-5.4",
+      "turns": 43,
+      "tokens": 3580622,
+      "cost_usd_estimate": 2.1080365,
+      "produced_outputs": [
+        "output/l2-deep-pilot.md"
+      ],
+      "outputs": [
+        {
+          "path": "output/l2-deep-pilot.md",
+          "kind": "markdown",
+          "required": true
+        }
+      ],
+      "depends_on": [
+        "l1-methods",
+        "l1-models-data",
+        "l1-economics",
+        "l1-market"
+      ],
+      "iterate": true,
+      "worktree": false
+    },
+    {
+      "id": "l2-deep-defense",
+      "type": "research",
+      "task": "You are L2 (double-down) researcher in a 2-layer fleet. Context: founder pitching Head of AI at a foundation lab in 2 days — post-training open code models on preference traces from QuickCall (daemon capturing accept/reject/corrections i…",
+      "status": "completed",
+      "model": "gpt-5.4",
+      "turns": 19,
+      "tokens": 776077,
+      "cost_usd_estimate": 0.7663535,
+      "produced_outputs": [
+        "output/l2-deep-defense.md"
+      ],
+      "outputs": [
+        {
+          "path": "output/l2-deep-defense.md",
+          "kind": "markdown",
+          "required": true
+        }
+      ],
+      "depends_on": [
+        "l1-methods",
+        "l1-models-data",
+        "l1-economics",
+        "l1-market"
+      ],
+      "iterate": true,
+      "worktree": false
+    },
+    {
+      "id": "reading-pack",
+      "type": "write",
+      "task": "You are the fan-in synthesis node of a 2-layer research fleet. Read all eight research files in the fleet workspace: workers/l1-*/output/l1-*.md and workers/l2-*/output/l2-*.md. Context: founder of QuickCall (daemon capturing preference …",
+      "status": "running",
+      "model": "gpt-5.4",
+      "turns": 0,
+      "tokens": 0,
+      "cost_usd_estimate": 0,
+      "produced_outputs": [],
+      "outputs": [
+        {
+          "path": "output/zero-to-hero.md",
+          "kind": "markdown",
+          "required": true
+        },
+        {
+          "path": "output/talk-track.md",
+          "kind": "markdown",
+          "required": true
+        }
+      ],
+      "depends_on": [
+        "l2-deep-methods",
+        "l2-deep-data",
+        "l2-deep-pilot",
+        "l2-deep-defense"
+      ],
+      "iterate": true,
+      "worktree": false
+    },
+    {
+      "id": "gap-reviewer",
+      "type": "reviewer",
+      "task": "You are the review gate of a 2-layer research fleet. Deliverable under review: output/zero-to-hero.md and output/talk-track.md (find in fleet workspace), synthesizing L1 surveys (workers/l1-*/output/) and L2 deep-dives (workers/l2-*/outp…",
+      "status": "pending",
+      "model": "k3",
+      "turns": 0,
+      "tokens": 0,
+      "cost_usd_estimate": 0,
+      "produced_outputs": [],
+      "outputs": [
+        {
+          "path": "output/verdict.md",
+          "kind": "verdict",
+          "required": true
+        }
+      ],
+      "depends_on": [
+        "reading-pack"
+      ],
+      "iterate": true,
+      "worktree": false
+    }
+  ],
+  "edges": [
+    {
+      "from": "l1-methods",
+      "to": "l2-deep-methods"
+    },
+    {
+      "from": "l1-models-data",
+      "to": "l2-deep-methods"
+    },
+    {
+      "from": "l1-economics",
+      "to": "l2-deep-methods"
+    },
+    {
+      "from": "l1-market",
+      "to": "l2-deep-methods"
+    },
+    {
+      "from": "l1-methods",
+      "to": "l2-deep-data"
+    },
+    {
+      "from": "l1-models-data",
+      "to": "l2-deep-data"
+    },
+    {
+      "from": "l1-economics",
+      "to": "l2-deep-data"
+    },
+    {
+      "from": "l1-market",
+      "to": "l2-deep-data"
+    },
+    {
+      "from": "l1-methods",
+      "to": "l2-deep-pilot"
+    },
+    {
+      "from": "l1-models-data",
+      "to": "l2-deep-pilot"
+    },
+    {
+      "from": "l1-economics",
+      "to": "l2-deep-pilot"
+    },
+    {
+      "from": "l1-market",
+      "to": "l2-deep-pilot"
+    },
+    {
+      "from": "l1-methods",
+      "to": "l2-deep-defense"
+    },
+    {
+      "from": "l1-models-data",
+      "to": "l2-deep-defense"
+    },
+    {
+      "from": "l1-economics",
+      "to": "l2-deep-defense"
+    },
+    {
+      "from": "l1-market",
+      "to": "l2-deep-defense"
+    },
+    {
+      "from": "l2-deep-methods",
+      "to": "reading-pack"
+    },
+    {
+      "from": "l2-deep-data",
+      "to": "reading-pack"
+    },
+    {
+      "from": "l2-deep-pilot",
+      "to": "reading-pack"
+    },
+    {
+      "from": "l2-deep-defense",
+      "to": "reading-pack"
+    },
+    {
+      "from": "reading-pack",
+      "to": "gap-reviewer"
+    }
+  ],
+  "iterations": [],
+  "demo": true
+}
+) as Omit<CanvasPayload, "generated_at">;
+
 export function buildDemoPayload(): CanvasPayload {
-  return {
-    fleet_name: "demo-fleet",
-    status: "running",
-    created_at: new Date().toISOString(),
-    iteration: 2,
-    lgtm_streak: 1,
-    paused: false,
-    cost_usd_estimate: 2.34,
-    demo: true,
-    config: { max_concurrent: 3, model: "claude", effort: "high" },
-    loop: { gate: "reviewer", max_iterations: 5, lgtm_count: 2 },
-    nodes: [
-      {
-        id: "research-a",
-        type: "research",
-        task: "Research agent A background and surface relevant prior art for the feature.",
-        status: "completed",
-        model: "gpt-5.4-mini",
-        effort: "medium",
-        turns: 4,
-        tokens: 8200,
-        cost_usd_estimate: 0.12,
-        produced_outputs: ["output/a.md"],
-        outputs: [{ path: "output/a.md", kind: "markdown", required: true }],
-        depends_on: [],
-        iterate: true,
-        worktree: false,
-      },
-      {
-        id: "research-b",
-        type: "research",
-        task: "Research agent B constraints and compile a list of non-functional requirements.",
-        status: "completed",
-        model: "gpt-5.4-mini",
-        effort: "medium",
-        turns: 3,
-        tokens: 6400,
-        cost_usd_estimate: 0.09,
-        produced_outputs: ["output/b.md"],
-        outputs: [{ path: "output/b.md", kind: "markdown", required: true }],
-        depends_on: [],
-        iterate: true,
-        worktree: false,
-      },
-      {
-        id: "builder",
-        type: "code-run",
-        task: "Build the feature using both research outputs and commit the implementation to the worktree branch.",
-        status: "running",
-        model: "kimi-coding",
-        effort: "high",
-        turns: 6,
-        tokens: 15400,
-        cost_usd_estimate: 0.83,
-        produced_outputs: [],
-        outputs: [{ path: "src/feature.ts", kind: "file-exists", required: true }],
-        depends_on: ["research-a", "research-b"],
-        iterate: true,
-        worktree: true,
-      },
-      {
-        id: "reviewer",
-        type: "reviewer",
-        task: "Review the implementation for correctness, edge cases, and style consistency.",
-        status: "pending",
-        model: "claude",
-        effort: "high",
-        turns: 0,
-        tokens: 0,
-        cost_usd_estimate: 0,
-        produced_outputs: [],
-        outputs: [{ path: "output/verdict.md", kind: "verdict", required: true }],
-        depends_on: ["builder"],
-        iterate: true,
-        worktree: false,
-      },
-    ],
-    edges: [
-      { from: "research-a", to: "builder" },
-      { from: "research-b", to: "builder" },
-      { from: "builder", to: "reviewer" },
-    ],
-    iterations: [
-      { n: 1, verdict: "iterate", cost: 1.21, tokens: 21000, duration_ms: 45000 },
-      { n: 2, verdict: null, cost: 1.13, tokens: 18000, duration_ms: 32000 },
-    ],
-    generated_at: new Date().toISOString(),
-  };
+  return { ...DEMO_FLEET, generated_at: new Date().toISOString() };
 }
 
 export interface SessionEntryView {
@@ -226,519 +513,202 @@ async function latestSessionFile(workerDir: string): Promise<string | undefined>
   }
 }
 
-export function renderCanvasPage(): string {
+const HERE = dirname(fileURLToPath(import.meta.url));
+const requireFrom = createRequire(import.meta.url);
+
+let bundleCache: Promise<string> | undefined;
+
+/** Bundle the React canvas client with esbuild (cached after first build). */
+async function buildClientBundle(): Promise<string> {
+  const esbuild = await import("esbuild");
+  const result = await esbuild.build({
+    entryPoints: [join(HERE, "canvas-client.tsx")],
+    bundle: true,
+    format: "iife",
+    platform: "browser",
+    target: "es2020",
+    jsx: "automatic",
+    minify: true,
+    write: false,
+    logLevel: "silent",
+    define: { "process.env.NODE_ENV": '"production"' },
+  });
+  return result.outputFiles[0].text;
+}
+
+function flowCss(): string {
+  try {
+    return readFileSyncSafe(requireFrom.resolve("@xyflow/react/dist/style.css"));
+  } catch {
+    return "";
+  }
+}
+function readFileSyncSafe(p: string): string {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  return (requireFrom("node:fs") as typeof import("node:fs")).readFileSync(p, "utf-8");
+}
+
+const PAGE_CSS = `
+:root { color-scheme: dark; --bg:#0d1117; --fg:#c9d1d9; --muted:#8b949e; --line:#30363d; --panel:#1a2029; --panel-2:#212936; --stage-bg:#0a0c10; --accent:#58a6ff; --ok:#3fb950; --bad:#f85149; --warn:#d29922; --wire:#6e7681; --hdr:#f0f6fc; --card-shadow:0 1px 2px rgba(0,0,0,0.5), 0 10px 24px -8px rgba(0,0,0,0.65); --card-shadow-lg:0 2px 4px rgba(0,0,0,0.5), 0 16px 36px -10px rgba(0,0,0,0.75); --edge:#4a5361; --edge-soft:#363d49; --mm-mask:rgba(8,10,14,0.55); --mm-frame:rgba(255,255,255,0.14); }
+[data-theme="light"] { color-scheme: light; --bg:#f6f8fa; --fg:#1f2328; --muted:#57606a; --line:#d0d7de; --panel:#ffffff; --panel-2:#f6f8fa; --stage-bg:#eef1f5; --accent:#0969da; --ok:#1a7f37; --bad:#cf222e; --warn:#9a6700; --wire:#8c959f; --hdr:#1f2328; --card-shadow:0 1px 2px rgba(15,23,42,0.08), 0 10px 24px -8px rgba(15,23,42,0.18); --card-shadow-lg:0 2px 4px rgba(15,23,42,0.10), 0 16px 36px -10px rgba(15,23,42,0.24); --edge:#b5bdc9; --edge-soft:#d0d7de; --mm-mask:rgba(15,23,42,0.10); --mm-frame:rgba(9,105,218,0.35); }
+:root { --ui:system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; --mono:"SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+* { box-sizing:border-box; }
+html,body,#root { margin:0; height:100%; }
+html,body { overflow:hidden; font:13px/1.45 var(--ui); background:var(--bg); color:var(--fg); }
+/* monospace is reserved for identifiers, code paths, measurements, and transcripts */
+.id, .stats, .out-chip, .badge, .fp-name, .fp-status, .fp-trigger-status, .taskbox-side, .msg, .empty code { font-family:var(--mono); }
+#root { display:flex; flex-direction:column; }
+header { padding:8px 14px; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:center; flex-wrap:wrap; background:var(--panel); flex:0 0 auto; }
+header .name { font-weight:700; color:var(--hdr); }
+#hdr { display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; min-width:0; }
+.pill { padding:1px 8px; border-radius:10px; border:1px solid var(--line); }
+button, select { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:5px 11px; min-height:30px; font:inherit; cursor:pointer; }
+button:hover, select:hover { border-color:var(--accent); }
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:6px; }
+.icon-btn { display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; min-height:30px; padding:0; font-size:18px; line-height:1; color:var(--muted); }
+.icon-btn:hover { color:var(--fg); }
+.fp { position:relative; }
+.fp-trigger { display:flex; align-items:center; gap:7px; min-width:210px; max-width:360px; padding:5px 11px; min-height:30px; text-align:left; }
+.fp-trigger-status { font-size:11px; color:var(--muted); border:1px solid var(--line); border-radius:8px; padding:0 6px; white-space:nowrap; }
+.fp-label { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fp-caret { color:var(--muted); font-size:11px; }
+.dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; background:var(--muted); }
+.dot.live { background:transparent; border:2px solid var(--accent); }
+.fp-menu { position:absolute; top:calc(100% + 6px); left:0; width:340px; max-width:78vw; background:var(--panel); border-radius:12px; box-shadow:var(--card-shadow-lg); z-index:50; overflow:hidden; }
+.fp-search { width:100%; border:none; border-bottom:1px solid var(--line); border-radius:0; padding:9px 12px; background:transparent; color:var(--fg); }
+.fp-search:focus-visible { outline-offset:-2px; }
+.fp-list { max-height:340px; overflow-y:auto; padding:4px 0; }
+.fp-item { display:flex; align-items:center; gap:9px; padding:8px 12px; min-height:34px; cursor:pointer; }
+.fp-item.active { background:color-mix(in srgb, var(--fg) 8%, transparent); }
+.fp-item.selected .fp-name { color:var(--accent); font-weight:600; }
+.fp-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fp-status { font-size:11px; color:var(--muted); white-space:nowrap; flex-shrink:0; }
+.fp-empty { padding:10px; color:var(--muted); text-align:center; }
+.taskbox-side-label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:4px; }
+main { display:flex; flex:1 1 auto; min-height:0; }
+#stage { flex:1; position:relative; min-width:0; background:var(--stage-bg); }
+.react-flow { background:var(--stage-bg); }
+.react-flow__node { width:284px; }
+.react-flow__handle { width:6px; height:6px; background:var(--wire); border:none; opacity:0; }
+.react-flow__edge-path { stroke:var(--edge); stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
+.react-flow__edge:hover .react-flow__edge-path { stroke:var(--accent); stroke-width:2; }
+.react-flow__edge.animated .react-flow__edge-path { stroke:var(--accent); stroke-width:2; stroke-dasharray:1 7; animation:dashflow 0.7s linear infinite; }
+@keyframes dashflow { to { stroke-dashoffset:-16; } }
+.react-flow__controls button { background:var(--panel); color:var(--fg); border-bottom:1px solid var(--line); fill:var(--fg); }
+.react-flow__minimap { width:172px; height:112px; background:var(--panel); border-radius:12px; box-shadow:var(--card-shadow); overflow:hidden; }
+.react-flow__minimap svg { border-radius:10px; }
+.react-flow__minimap-mask { fill:var(--mm-mask) !important; stroke:none; }
+.react-flow__minimap-node { stroke:var(--panel) !important; stroke-width:4px !important; rx:3; ry:3; }
+.react-flow__attribution { display:none; }
+.node { position:relative; width:284px; border-radius:12px; background:var(--panel); cursor:pointer; box-shadow:var(--card-shadow); transition:box-shadow 0.18s ease, transform 0.18s ease; }
+.node:hover { box-shadow:var(--card-shadow-lg); transform:translateY(-2px); }
+.node.sel { background:color-mix(in srgb, var(--accent) 14%, var(--panel)); box-shadow:var(--card-shadow-lg); transform:translateY(-2px); }
+.node.sel.st-failed, .node.sel.st-contract_failed { background:color-mix(in srgb, var(--bad) 14%, var(--panel)); }
+/* keyboard focus ring only — never on mouse click */
+.node:focus:not(:focus-visible) { outline:none; }
+.node.st-running { background:color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+.node.st-failed, .node.st-contract_failed { background:color-mix(in srgb, var(--bad) 11%, var(--panel)); }
+.card-body { padding:13px 14px; }
+.node-header { display:flex; align-items:center; gap:7px; }
+.node-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.node-dot.pulse { animation:pulse 1.6s ease-in-out infinite; }
+.node-header .id { flex:1; }
+.node-header .badge { margin-left:auto; }
+.id { font-weight:700; font-size:16px; letter-spacing:-0.01em; color:var(--hdr); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.badge { font-size:11px; padding:1px 7px; border:1px solid var(--line); border-radius:10px; color:var(--muted); white-space:nowrap; }
+.status-row { margin-top:7px; display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); }
+.status-row .st-word { color:var(--fg); font-weight:600; }
+.spinner { width:10px; height:10px; border:2px solid var(--accent); border-top-color:transparent; border-radius:50%; animation:spin 1s linear infinite; display:inline-block; flex-shrink:0; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.stats { margin-top:4px; font-size:13px; color:var(--muted); }
+.outputs { margin-top:6px; }
+.out-chip { display:inline-block; font-size:11px; line-height:1.5; border:1px solid var(--line); border-radius:8px; padding:5px 8px; margin:4px 4px 0 0; color:var(--muted); background:var(--bg); }
+.flags { margin-top:6px; font-size:11px; color:var(--warn); }
+.flags span { cursor:help; }
+.note { margin-top:6px; font-size:13px; color:var(--warn); }
+#side { width:420px; flex:0 0 auto; border-left:1px solid var(--line); overflow:auto; padding:12px; background:var(--bg); }
+#side:focus, #side:focus-visible { outline:none; }
+.side-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.side-head .meta { color:var(--muted); }
+.taskbox-side { border:1px solid var(--line); border-radius:6px; padding:8px; margin-bottom:10px; white-space:pre-wrap; word-break:break-word; font-size:13px; }
+.msg { margin-bottom:10px; padding:8px; border-radius:6px; background:var(--panel); white-space:pre-wrap; word-break:break-word; }
+.msg .role { font-weight:700; margin-bottom:4px; }
+.role-user { color:var(--accent); } .role-assistant { color:var(--ok); } .role-tool { color:var(--warn); }
+.react-flow__minimap-node.st-completed { fill:var(--ok); }
+.react-flow__minimap-node.st-running { fill:var(--accent); }
+.react-flow__minimap-node.st-failed, .react-flow__minimap-node.st-contract_failed { fill:var(--bad); }
+.react-flow__minimap-node.st-killed, .react-flow__minimap-node.st-blocked { fill:var(--wire); }
+.react-flow__minimap-node.st-pending, .react-flow__minimap-node.st-ready { fill:var(--line); }
+/* header status strip */
+.spacer { flex:1; }
+.fleet-title { font-weight:700; font-size:16px; color:var(--hdr); max-width:34ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.stat { display:inline-flex; align-items:center; gap:5px; color:var(--muted); }
+.pill.status-running { color:var(--accent); border-color:var(--accent); }
+.pill.status-completed { color:var(--ok); border-color:var(--ok); }
+.pill.status-failed, .pill.status-contract_failed { color:var(--bad); border-color:var(--bad); }
+.pill-bad { color:var(--bad); border-color:var(--bad); }
+.pill-btn { display:inline-flex; align-items:center; min-height:24px; cursor:pointer; font:inherit; padding:3px 9px; }
+.pill-btn:hover { background:var(--bg); }
+.dot-run { background:var(--accent); animation:pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.35; } }
+.conn { display:inline-flex; align-items:center; gap:8px; }
+.link-btn { display:inline-flex; align-items:center; min-height:24px; background:none; border:none; padding:2px 8px; color:var(--accent); text-decoration:underline; cursor:pointer; }
+button.toggled { border-color:var(--accent); color:var(--accent); }
+/* legend */
+.legend { position:absolute; left:12px; bottom:12px; z-index:20; min-width:190px; padding:10px 12px; background:var(--panel); border-radius:12px; box-shadow:var(--card-shadow-lg); font-size:13px; }
+.legend-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:7px; font-size:11px; letter-spacing:0.06em; text-transform:uppercase; color:var(--muted); }
+.legend-row { display:flex; align-items:center; gap:9px; padding:2px 0; }
+.swatch { width:12px; height:12px; border-radius:3px; flex-shrink:0; background:var(--line); }
+.swatch.st-completed { background:var(--ok); }
+.swatch.st-running { background:var(--accent); }
+.swatch.st-failed { background:var(--bad); }
+.swatch.st-blocked { background:var(--wire); }
+.swatch.st-pending { background:var(--line); }
+.swatch-line { width:16px; height:0; border-top:2px dashed var(--warn); flex-shrink:0; }
+.legend-loop { color:var(--warn); margin-top:2px; }
+.icon-btn.sm { width:24px; height:24px; min-height:24px; font-size:16px; }
+/* empty state */
+.empty { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; text-align:center; padding:24px; }
+.empty-title { font-size:19px; font-weight:700; color:var(--hdr); }
+.empty-body { max-width:460px; margin:0; color:var(--muted); }
+.empty-steps { max-width:460px; margin:0; text-align:left; color:var(--muted); line-height:1.8; padding-left:18px; }
+.empty code { background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:1px 5px; }
+.empty-cta { border-color:var(--accent); color:var(--accent); padding:8px 16px; }
+.empty-cta:hover { background:var(--panel); }
+/* failure reason surfaced on failed cards */
+.fail-reason { margin-top:6px; font-size:13px; color:var(--bad); }
+/* respect reduced-motion: keep the state, drop the perpetual movement */
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation:none; border-top-color:var(--accent); opacity:0.6; }
+  .dot-run, .node-dot.pulse { animation:none; }
+  .node:hover { transform:none; }
+  .react-flow__edge.animated .react-flow__edge-path { animation:none; }
+  * { scroll-behavior:auto; }
+}
+/* narrow viewports: side panel overlays the stage, header controls stay reachable */
+@media (max-width:700px) {
+  .spacer { display:none; }
+  #side { position:absolute; top:0; right:0; bottom:0; width:min(420px,100%); z-index:40; box-shadow:-10px 0 30px rgba(0,0,0,0.45); }
+  .fp-trigger { min-width:150px; }
+  .legend { bottom:auto; top:12px; }
+}
+`;
+
+/** Full canvas HTML page with the React/@xyflow bundle inlined. Cached after first build. */
+export async function renderCanvasPage(): Promise<string> {
+  bundleCache ??= buildClientBundle();
+  const [bundle] = await Promise.all([bundleCache]);
   return `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
 <title>fleet canvas</title>
-<style>
-:root { color-scheme: dark; --bg:#0d1117; --fg:#c9d1d9; --muted:#8b949e; --line:#30363d; --panel:#161b22; --stage-bg:#0a0c10; --accent:#58a6ff; --ok:#3fb950; --bad:#f85149; --warn:#d29922; --wire:#6e7681; --hdr:#f0f6fc; }
-[data-theme="light"] { color-scheme: light; --bg:#f6f8fa; --fg:#1f2328; --muted:#57606a; --line:#d0d7de; --panel:#ffffff; --stage-bg:#f6f8fa; --accent:#0969da; --ok:#1a7f37; --bad:#cf222e; --warn:#9a6700; --wire:#8c959f; --hdr:#1f2328; }
-body.light { color-scheme: light; }
-* { box-sizing:border-box; }
-html,body { margin:0; height:100%; overflow:hidden; font:13px/1.45 -apple-system, Menlo, monospace; background:var(--bg); color:var(--fg); }
-header { padding:8px 14px; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:center; flex-wrap:wrap; background:var(--panel); }
-header .name { font-weight:700; color:var(--hdr); }
-#hdr { display:flex; gap:12px; align-items:baseline; }
-.pill { padding:1px 8px; border-radius:10px; border:1px solid var(--line); }
-button, select { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:3px 10px; font:inherit; cursor:pointer; }
-button:hover, select:hover { border-color:var(--accent); }
-main { display:flex; height:calc(100% - 42px); }
-#stage { flex:1; position:relative; overflow:hidden; background:var(--stage-bg); }
-#viewport { position:absolute; left:0; top:0; transform-origin:0 0; }
-#toolbar { position:absolute; top:12px; left:12px; display:flex; gap:6px; padding:6px; border:1px solid var(--line); border-radius:8px; background:var(--panel); z-index:10; box-shadow:0 2px 8px rgba(0,0,0,0.25); }
-#toolbar button { padding:3px 8px; }
-#minimap { position:absolute; right:12px; bottom:12px; width:200px; height:140px; border:1px solid var(--line); border-radius:8px; background:var(--panel); z-index:10; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.25); }
-#minimap.hidden { display:none; }
-.node { position:absolute; width:260px; border:1px solid var(--line); border-radius:10px; background:var(--panel); cursor:pointer; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.25); transition:border-color 0.15s, box-shadow 0.15s; }
-.node:hover { border-color:var(--accent); }
-.node.sel { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
-.accent { height:4px; width:100%; }
-.st-completed .accent { background:var(--ok); }
-.st-running .accent { background:var(--accent); }
-.st-failed .accent, .st-contract_failed .accent { background:var(--bad); }
-.st-killed .accent, .st-blocked .accent { background:var(--wire); }
-.st-pending .accent, .st-ready .accent { background:var(--line); }
-.card-body { padding:10px; }
-.node-header { display:flex; justify-content:space-between; align-items:center; gap:8px; }
-.id { font-weight:700; color:var(--hdr); overflow:hidden; text-overflow:ellipsis; }
-.badge { font-size:10px; padding:1px 7px; border:1px solid var(--line); border-radius:10px; color:var(--muted); white-space:nowrap; }
-.status-row { margin-top:6px; display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
-.spinner { width:10px; height:10px; border:2px solid var(--accent); border-top-color:transparent; border-radius:50%; animation:spin 1s linear infinite; display:inline-block; flex-shrink:0; }
-@keyframes spin { to { transform:rotate(360deg); } }
-.stats { margin-top:4px; font-size:12px; color:var(--muted); }
-.outputs { margin-top:6px; }
-.out-chip { display:inline-block; font-size:10px; border:1px solid var(--line); border-radius:8px; padding:1px 6px; margin:3px 3px 0 0; color:var(--muted); background:var(--bg); }
-.flags { margin-top:4px; font-size:10px; color:var(--warn); }
-.taskbox { margin-top:8px; padding:8px; border:1px solid var(--line); border-radius:6px; font-size:12px; color:var(--fg); white-space:pre-wrap; word-break:break-word; max-height:120px; overflow:auto; }
-.note { margin-top:6px; font-size:12px; color:var(--warn); }
-.session-preview { margin-top:8px; padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); }
-.session-preview .caption { font-size:10px; color:var(--muted); margin-bottom:4px; }
-.session-preview .role { font-weight:700; font-size:11px; }
-.session-preview .msg { font-size:11px; color:var(--muted); white-space:pre-wrap; word-break:break-word; max-height:80px; overflow:hidden; }
-#side { width:420px; border-left:1px solid var(--line); overflow:auto; padding:12px; display:none; background:var(--bg); }
-#side.open { display:block; }
-#side .meta { color:var(--muted); margin-bottom:8px; }
-.taskbox-side { border:1px solid var(--line); border-radius:6px; padding:8px; margin-bottom:10px; white-space:pre-wrap; word-break:break-word; font-size:12px; }
-.msg { margin-bottom:10px; padding:8px; border-radius:6px; background:var(--panel); white-space:pre-wrap; word-break:break-word; }
-.msg .role { font-weight:700; margin-bottom:4px; }
-.role-user { color:var(--accent); } .role-assistant { color:var(--ok); } .role-tool { color:var(--warn); }
-#empty { padding:40px; color:var(--muted); }
-.map-node { rx:2; ry:2; }
-.st-completed.map-node { fill:var(--ok); }
-.st-running.map-node { fill:var(--accent); }
-.st-failed.map-node, .st-contract_failed.map-node { fill:var(--bad); }
-.st-killed.map-node, .st-blocked.map-node { fill:var(--wire); }
-.st-pending.map-node, .st-ready.map-node { fill:var(--line); }
-.map-viewport { fill:rgba(88,166,255,0.12); stroke:var(--accent); stroke-width:1; }
-</style>
+<style>${flowCss()}</style>
+<style>${PAGE_CSS}</style>
 </head>
 <body>
-<header>
-  <span class="name">fleet canvas</span>
-  <select id="fleetSel"></select>
-  <span id="hdr"></span>
-  <span style="flex:1"></span>
-  <button onclick="toggleTheme()">theme</button>
-</header>
-<main>
-<div id="stage">
-  <div id="toolbar">
-    <button onclick="zoomAt(stage.clientWidth/2, stage.clientHeight/2, 1.2)" title="zoom in">+</button>
-    <button onclick="zoomAt(stage.clientWidth/2, stage.clientHeight/2, 1/1.2)" title="zoom out">-</button>
-    <button onclick="fitView()">fit</button>
-    <button onclick="resetView()">1:1</button>
-    <button onclick="toggleTheme()">theme</button>
-    <button id="mapBtn" onclick="toggleMinimap()">map</button>
-    <button onclick="toggleDemo()">demo</button>
-  </div>
-  <div id="minimap"><svg id="mapSvg" width="100%" height="100%"></svg></div>
-  <div id="viewport"></div>
-</div>
-<div id="side"></div>
-</main>
-<script>
-var MIN_ZOOM = 0.2, MAX_ZOOM = 2.5;
-var camera = { x: 40, y: 40, scale: 1 };
-var selected = null;
-var currentFleet = null;
-var isDemo = false;
-var expandedNodes = new Set();
-var stage, viewport, minimap, mapSvg;
-var lastPayload = null;
-
-function $(id){ return document.getElementById(id); }
-function j(u){ return fetch(u).then(function(r){ if(!r.ok) throw new Error(String(r.status)); return r.json(); }); }
-function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]; }); }
-
-/* theme */
-function currentTheme(){ return document.documentElement.getAttribute("data-theme") || "dark"; }
-function applyTheme(t){
-  document.documentElement.setAttribute("data-theme", t);
-  document.body.className = t;
-  try { localStorage.setItem("fleet-canvas-theme", t); } catch(e){}
-}
-function toggleTheme(){
-  var t = currentTheme() === "light" ? "dark" : "light";
-  applyTheme(t);
-  updateSearchParam("theme", t);
-}
-function updateSearchParam(key, value){
-  var u = new URL(location.href);
-  if(value) u.searchParams.set(key, value);
-  else u.searchParams.delete(key);
-  history.replaceState(null, "", u.toString());
-}
-(function(){
-  var qs = new URLSearchParams(location.search);
-  var t = qs.get("theme");
-  if(t !== "light" && t !== "dark"){
-    try { t = localStorage.getItem("fleet-canvas-theme"); } catch(e){}
-    if(t !== "light" && t !== "dark" && window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches) t = "light";
-  }
-  applyTheme(t === "light" || t === "dark" ? t : "dark");
-})();
-
-/* demo */
-function initDemo(){
-  var qs = new URLSearchParams(location.search);
-  isDemo = qs.get("demo") === "1";
-}
-function toggleDemo(){
-  isDemo = !isDemo;
-  updateSearchParam("demo", isDemo ? "1" : null);
-  selected = null;
-  $("side").classList.remove("open");
-  tick();
-}
-
-/* camera */
-function applyCamera(){
-  viewport.style.transform = "translate(" + camera.x + "px," + camera.y + "px) scale(" + camera.scale + ")";
-  updateMapViewport();
-}
-function screenToWorld(sx, sy){ return { x: (sx - camera.x) / camera.scale, y: (sy - camera.y) / camera.scale }; }
-function zoomAt(sx, sy, factor){
-  var p = screenToWorld(sx, sy);
-  camera.scale = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, camera.scale * factor));
-  camera.x = sx - p.x * camera.scale;
-  camera.y = sy - p.y * camera.scale;
-  applyCamera();
-}
-stage = $("stage");
-viewport = document.createElement("div");
-viewport.id = "viewport";
-stage.appendChild(viewport);
-mapSvg = $("mapSvg");
-minimap = $("minimap");
-
-var dragging = false, lastX = 0, lastY = 0;
-stage.addEventListener("wheel", function(e){
-  e.preventDefault();
-  var r = stage.getBoundingClientRect();
-  zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015));
-}, { passive: false });
-stage.addEventListener("pointerdown", function(e){
-  if(e.target.closest && e.target.closest(".node")) return;
-  dragging = true; lastX = e.clientX; lastY = e.clientY;
-  stage.setPointerCapture(e.pointerId);
-});
-stage.addEventListener("pointermove", function(e){
-  if(!dragging) return;
-  camera.x += e.clientX - lastX;
-  camera.y += e.clientY - lastY;
-  lastX = e.clientX; lastY = e.clientY;
-  applyCamera();
-});
-stage.addEventListener("pointerup", function(){ dragging = false; });
-function fitView(){
-  var els = viewport.querySelectorAll(".node");
-  if(!els.length) return;
-  var minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
-  els.forEach(function(el){
-    var x = el.offsetLeft, y = el.offsetTop;
-    minX = Math.min(minX, x); minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x + el.offsetWidth); maxY = Math.max(maxY, y + el.offsetHeight);
-  });
-  var pad = 60;
-  var sw = stage.clientWidth - pad * 2, sh = stage.clientHeight - pad * 2;
-  var z = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.min(sw / (maxX - minX), sh / (maxY - minY))));
-  camera.scale = z;
-  camera.x = pad - minX * z + (sw - (maxX - minX) * z) / 2;
-  camera.y = pad - minY * z + (sh - (maxY - minY) * z) / 2;
-  applyCamera();
-}
-function resetView(){ camera = { x: 40, y: 40, scale: 1 }; applyCamera(); }
-
-/* layout */
-function topoLayers(nodes, edges){
-  var ids = nodes.map(function(n){ return n.id; });
-  var indeg = {}, rev = {};
-  ids.forEach(function(i){ indeg[i] = 0; rev[i] = []; });
-  edges.forEach(function(e){ if(e.from in indeg){ indeg[e.to]++; rev[e.from].push(e.to); } });
-  var layers = [], cur = ids.filter(function(i){ return indeg[i] === 0; }), seen = {};
-  while(cur.length){
-    layers.push(cur);
-    cur.forEach(function(i){ seen[i] = true; });
-    var next = [];
-    cur.forEach(function(i){
-      rev[i].forEach(function(m){
-        indeg[m]--;
-        if(indeg[m] === 0) next.push(m);
-      });
-    });
-    cur = next;
-  }
-  ids.forEach(function(i){ if(!seen[i]){ layers.push([i]); seen[i] = true; } });
-  return layers;
-}
-function median(arr){
-  var s = arr.slice().sort(function(a,b){ return a - b; });
-  var m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-}
-function reduceCrossings(layers, edges){
-  for(var li = 1; li < layers.length; li++){
-    var prev = layers[li - 1];
-    var prevPos = {};
-    prev.forEach(function(id, i){ prevPos[id] = i; });
-    layers[li].sort(function(a, b){
-      var pa = edges.filter(function(e){ return e.to === a; }).map(function(e){ return prevPos[e.from] == null ? 0 : prevPos[e.from]; });
-      var pb = edges.filter(function(e){ return e.to === b; }).map(function(e){ return prevPos[e.from] == null ? 0 : prevPos[e.from]; });
-      return median(pa) - median(pb);
-    });
-  }
-  return layers;
-}
-function layout(s){
-  var layers = reduceCrossings(topoLayers(s.nodes, s.edges), s.edges);
-  var pos = {};
-  layers.forEach(function(layer, li){
-    layer.forEach(function(id, ni){
-      pos[id] = { x: li * 320, y: ni * 140 };
-    });
-  });
-  return pos;
-}
-
-/* render */
-function statusClass(s){ return "st-" + s.replace(/\s+/g, "_"); }
-function nodeHtml(n){
-  var isRunning = n.status === "running";
-  var chips = (n.outputs || []).map(function(o){
-    return '<span class="out-chip">' + esc(o.path) + " · " + esc(o.kind) + '</span>';
-  }).join("");
-  var flags = [];
-  if(n.iterate === false) flags.push("once");
-  if(n.worktree) flags.push("worktree");
-  var expanded = expandedNodes.has(n.id);
-  var html = '<div class="accent"></div><div class="card-body">'
-    + '<div class="node-header"><span class="id">' + esc(n.id) + '</span><span class="badge">' + esc(n.type) + '</span></div>'
-    + '<div class="status-row">'
-    + (isRunning ? '<span class="spinner"></span>' : '')
-    + '<span>' + esc(n.status) + '</span>'
-    + (n.effort ? '<span>·</span><span>' + esc(n.effort) + '</span>' : '')
-    + '<span>·</span><span>' + esc(n.model) + '</span></div>'
-    + '<div class="stats">' + (n.turns | 0) + ' turns · ' + (Number(n.tokens || 0) / 1000).toFixed(1) + 'k tok · $' + Number(n.cost_usd_estimate || 0).toFixed(2) + '</div>'
-    + (chips ? '<div class="outputs">' + chips + '</div>' : "")
-    + (flags.length ? '<div class="flags">' + flags.join(" · ") + '</div>' : "")
-    + (n.status_note ? '<div class="note">' + esc(n.status_note) + '</div>' : "");
-  if(expanded){
-    html += '<div class="taskbox">' + esc(n.task) + '</div>'
-      + '<div class="session-preview"><div class="caption">last session preview</div><div class="body">loading…</div></div>';
-  }
-  html += '</div>';
-  return html;
-}
-function renderNodes(s, pos, byId){
-  s.nodes.forEach(function(n){
-    var el = document.createElement("div");
-    el.className = "node " + (expandedNodes.has(n.id) ? "expanded" : "collapsed") + " " + statusClass(n.status) + (selected === n.id ? " sel" : "");
-    el.setAttribute("data-id", n.id);
-    el.style.left = pos[n.id].x + "px";
-    el.style.top = pos[n.id].y + "px";
-    el.innerHTML = nodeHtml(n);
-    el.onclick = function(e){ e.stopPropagation(); sel(n.id); toggleExpand(n.id); };
-    viewport.appendChild(el);
-    n._lx = pos[n.id].x;
-    n._ly = pos[n.id].y;
-    n._el = el;
-    byId[n.id] = n;
-  });
-}
-function renderEdges(s, byId, svg){
-  svg.innerHTML = '<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="var(--wire)" /></marker></defs>';
-  s.edges.forEach(function(e){
-    var a = byId[e.from], b = byId[e.to];
-    if(!a || !b) return;
-    var x1 = a._lx + a._el.offsetWidth;
-    var y1 = a._ly + a._el.offsetHeight / 2;
-    var x2 = b._lx;
-    var y2 = b._ly + b._el.offsetHeight / 2;
-    var dx = Math.max(40, Math.abs(x2 - x1) * 0.5);
-    var p = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    p.setAttribute("d", "M " + x1 + " " + y1 + " C " + (x1 + dx) + " " + y1 + ", " + (x2 - dx) + " " + y2 + ", " + x2 + " " + y2);
-    p.setAttribute("fill", "none");
-    p.setAttribute("stroke", "var(--wire)");
-    p.setAttribute("stroke-width", "2");
-    p.setAttribute("marker-end", "url(#arrow)");
-    svg.appendChild(p);
-  });
-}
-function render(s){
-  lastPayload = s;
-  var pos = layout(s);
-  viewport.innerHTML = "";
-  var byId = {};
-  var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.style.position = "absolute";
-  svg.style.left = "0";
-  svg.style.top = "0";
-  svg.style.width = "1";
-  svg.style.height = "1";
-  svg.style.pointerEvents = "none";
-  svg.style.overflow = "visible";
-  viewport.appendChild(svg);
-  renderNodes(s, pos, byId);
-  renderEdges(s, byId, svg);
-  updateMinimap();
-  fillSessionPreviews();
-}
-function toggleExpand(id){
-  if(expandedNodes.has(id)) expandedNodes.delete(id);
-  else expandedNodes.add(id);
-  if(lastPayload) render(lastPayload);
-}
-
-/* minimap */
-function updateMinimap(){
-  if(minimap.classList.contains("hidden")) return;
-  var els = viewport.querySelectorAll(".node");
-  if(!els.length){ mapSvg.innerHTML = ""; return; }
-  var minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
-  els.forEach(function(el){
-    var x = el.offsetLeft, y = el.offsetTop;
-    minX = Math.min(minX, x); minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x + el.offsetWidth); maxY = Math.max(maxY, y + el.offsetHeight);
-  });
-  var pad = 6;
-  var mw = minimap.clientWidth - pad * 2, mh = minimap.clientHeight - pad * 2;
-  var scale = Math.min(mw / (maxX - minX), mh / (maxY - minY));
-  var ox = pad + (mw - (maxX - minX) * scale) / 2 - minX * scale;
-  var oy = pad + (mh - (maxY - minY) * scale) / 2 - minY * scale;
-  var html = "";
-  els.forEach(function(el){
-    var st = "";
-    for(var i = 0; i < el.classList.length; i++){
-      var c = el.classList[i];
-      if(c.indexOf("st-") === 0){ st = c; break; }
-    }
-    html += '<rect class="map-node ' + st + '" x="' + (el.offsetLeft * scale + ox) + '" y="' + (el.offsetTop * scale + oy) + '" width="' + (el.offsetWidth * scale) + '" height="' + (el.offsetHeight * scale) + '" />';
-  });
-  var vx = -camera.x / camera.scale, vy = -camera.y / camera.scale;
-  var vw = stage.clientWidth / camera.scale, vh = stage.clientHeight / camera.scale;
-  html += '<rect class="map-viewport" x="' + (vx * scale + ox) + '" y="' + (vy * scale + oy) + '" width="' + (vw * scale) + '" height="' + (vh * scale) + '" />';
-  mapSvg.innerHTML = html;
-}
-function updateMapViewport(){ updateMinimap(); }
-function toggleMinimap(){ minimap.classList.toggle("hidden"); updateMinimap(); }
-
-/* session previews inside expanded nodes */
-function fillSessionPreviews(){
-  if(isDemo) return;
-  expandedNodes.forEach(function(id){
-    var box = document.querySelector('.node[data-id="' + id + '"] .session-preview .body');
-    if(!box) return;
-    j("/api/session/" + id + "?tail=1" + sessionParam()).then(function(r){
-      var html = "";
-      if(r.entries && r.entries.length){
-        var e = r.entries[r.entries.length - 1];
-        html = '<div class="role role-' + esc(e.role) + '">' + esc(e.role) + '</div><div class="msg">' + esc(e.text.length > 160 ? e.text.slice(0, 160) + "…" : e.text) + '</div>';
-      } else {
-        html = '<div class="msg">No recent entries.</div>';
-      }
-      box.innerHTML = html;
-    }).catch(function(){
-      box.innerHTML = '<div class="msg">Session unavailable.</div>';
-    });
-  });
-}
-
-/* data */
-function fleetParam(){ return currentFleet ? "?fleet=" + encodeURIComponent(currentFleet) : ""; }
-function sessionParam(){ return currentFleet ? "&fleet=" + encodeURIComponent(currentFleet) : ""; }
-function apiUrl(){ return isDemo ? "/api/demo" : "/api/state" + fleetParam(); }
-function renderHeader(s){
-  var hdr = $("hdr");
-  if(s.empty){
-    hdr.innerHTML = '<span class="pill">no live fleet</span>';
-    return;
-  }
-  var loop = s.loop ? " · iter " + s.iteration + "/" + s.loop.max_iterations + " · streak " + s.lgtm_streak : "";
-  var done = s.nodes.filter(function(n){ return n.status === "completed"; }).length;
-  hdr.innerHTML = '<span class="name">' + esc(s.fleet_name) + '</span>'
-    + (s.demo ? '<span class="pill">demo</span>' : '')
-    + '<span class="pill">' + esc(s.status) + '</span>'
-    + (s.paused ? '<span class="pill">paused</span>' : '')
-    + '<span>' + done + '/' + s.nodes.length + ' done</span>'
-    + '<span>$' + s.cost_usd_estimate.toFixed(2) + '</span>'
-    + '<span class="meta">' + esc(loop) + '</span>';
-}
-function tick(){
-  j(apiUrl()).then(function(s){
-    if(s.empty){
-      renderHeader(s);
-      viewport.innerHTML = "";
-      updateMinimap();
-      return;
-    }
-    renderHeader(s);
-    render(s);
-  }).catch(function(){
-    if(currentFleet && !isDemo){
-      $("hdr").innerHTML = '<span class="pill">fleet unavailable</span>';
-      currentFleet = null;
-      $("fleetSel").value = "";
-      try { localStorage.removeItem("fleet-canvas-fleet"); } catch(e){}
-      tick();
-    } else {
-      $("hdr").innerHTML = '<span class="pill">connection lost</span>';
-    }
-  });
-}
-function side(){
-  if(!selected) return;
-  j("/api/session/" + selected + "?tail=30" + sessionParam()).then(function(r){
-    var el = $("side");
-    var sst = el.scrollTop;
-    var taskHtml = "";
-    if(r.task) taskHtml = '<div class="taskbox-side">' + esc(r.task) + '</div>';
-    el.innerHTML = '<div class="meta"># ' + esc(selected) + ' - session</div>'
-      + taskHtml
-      + (r.entries || []).map(function(e){
-          return '<div class="msg"><div class="role role-' + esc(e.role) + '">' + esc(e.role) + '</div>' + esc(e.text) + '</div>';
-        }).join("");
-    el.scrollTop = sst;
-  }).catch(function(){});
-}
-function sel(id){
-  selected = id;
-  $("side").classList.add("open");
-  if(lastPayload) render(lastPayload);
-  side();
-}
-
-/* fleet picker */
-function loadFleets(){
-  j("/api/fleets").then(function(r){
-    var selEl = $("fleetSel");
-    var opts = ['<option value="">live fleet</option>'];
-    r.fleets.forEach(function(f){
-      opts.push('<option value="' + esc(f.name) + '">' + esc(f.name) + ' (' + esc(f.status) + ')</option>');
-    });
-    selEl.innerHTML = opts.join("");
-    var qs = new URLSearchParams(location.search);
-    var want = qs.get("fleet");
-    var saved = "";
-    try { saved = localStorage.getItem("fleet-canvas-fleet") || ""; } catch(e){}
-    var pick = want || saved || "";
-    if(pick && r.fleets.some(function(f){ return f.name === pick; })){
-      currentFleet = pick;
-      selEl.value = pick;
-    }
-    tick();
-    var pre = qs.get("node");
-    if(pre) sel(pre);
-  }).catch(function(){
-    tick();
-    var qs = new URLSearchParams(location.search);
-    var pre = qs.get("node");
-    if(pre) sel(pre);
-  });
-}
-$("fleetSel").addEventListener("change", function(e){
-  currentFleet = e.target.value || null;
-  try { localStorage.setItem("fleet-canvas-fleet", currentFleet || ""); } catch(err){}
-  selected = null;
-  $("side").classList.remove("open");
-  tick();
-});
-
-/* keyboard shortcuts */
-window.addEventListener("keydown", function(e){
-  if(e.target.matches("input,select,textarea")) return;
-  if(e.key === "f"){ e.preventDefault(); fitView(); }
-  else if(e.key === "0"){ e.preventDefault(); resetView(); }
-  else if(e.key === "t"){ e.preventDefault(); toggleTheme(); }
-  else if(e.key === "d"){ e.preventDefault(); toggleDemo(); }
-});
-
-initDemo();
-loadFleets();
-setInterval(tick, 1500);
-setInterval(side, 2000);
-</script>
+<div id="root"></div>
+<script>${bundle}</script>
 </body>
 </html>`;
 }
@@ -816,7 +786,7 @@ export async function startCanvasServer(opts: {
       const url = new URL(req.url ?? "/", "http://localhost");
       if (url.pathname === "/") {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-        res.end(renderCanvasPage());
+        res.end(await renderCanvasPage());
         return;
       }
       if (url.pathname === "/api/demo") {
