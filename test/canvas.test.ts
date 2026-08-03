@@ -139,6 +139,22 @@ describe("startCanvasServer", () => {
   });
 });
 
+describe("demo endpoint", () => {
+  it("serves a demo payload", async () => {
+    const server = await startCanvasServer({ getFleet: () => undefined, cwd: "/tmp" });
+    try {
+      const demo = await (await fetch(`${server.url}/api/demo`)).json();
+      expect(demo.fleet_name).toBe("demo-fleet");
+      expect(demo.nodes.length).toBeGreaterThan(1);
+      expect(demo.demo).toBe(true);
+      expect(demo.edges.length).toBeGreaterThan(0);
+      expect(demo.iterations.length).toBe(2);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
 describe("openInBrowser", () => {
   it("maps platforms to opener commands and swallows failures", async () => {
     const calls: string[] = [];
