@@ -64,7 +64,7 @@ The agent calls `fleet_plan` (validates + ASCII preview), you confirm, `fleet_la
 
 A reviewer node writes a verdict contract (`verdict: lgtm | iterate | escalate` + actionable body). `iterate` → builders get the review injected as feedback next iteration. `lgtm` × `lgtm_count` consecutive → completed. `escalate` → fleet pauses and notifies you. `gate: "none"` → free-running loop (autoresearch pattern: eval instructions live in the worker's task text).
 
-**Worktree mode** — `worktree: true` on a node: the worker is directed to create its own git worktree at a designated path/branch. Downstream nodes see upstream worktree paths/branches in their prompts. The extension runs zero git commands; conflicts are resolved by resolver nodes you add to the DAG.
+**Worktree mode** — `worktree: true` on a node: the worker runs in a dedicated git worktree on a deterministic branch (`fleet/<fleet-name>/<node-id>`). The extension creates the worktree, commits the worker's changes, and, when two or more worktree workers exist, auto-injects a `fleet-integrator` node that merges their branches in dependency order before the agent runs. Overlapping repo-relative output paths without an ordered handoff are rejected at plan time. Merge conflicts surface as a failed integrator with a `status_note` listing the files, so the operator can resolve and relaunch.
 
 **Run-once vs replay nodes** — `iterate: false`: node runs at iteration 1 only, outputs carry over (e.g. research that doesn't change).
 
@@ -92,8 +92,9 @@ Failed required contract → `contract_failed`, dependents blocked, orchestrator
 | `fleet_relaunch` | re-run a failed node (+ blocked downstream), optional model override |
 | `fleet_kill` | fleet-wide kill |
 | `fleet_report` | regenerate report.md |
+| `fleet_canvas` | open browser canvas; `?demo=1` shows synthetic data for UI iteration |
 
-`/fleet viz | status | clear | pause | resume | relaunch <id> [model] | kill all`
+`/fleet viz | status | clear | pause | resume | relaunch <id> [model] | kill all | canvas [open|url|stop]`
 
 ## Records
 
@@ -111,7 +112,7 @@ Fleet-wide default via `config.model`; per-node override via `worker.model`. Any
 
 ```bash
 npm install
-npm test          # 111 tests, zero-API (fake session factory)
+npm test          # 232 tests, zero-API (fake session factory)
 npm run typecheck
 ```
 
