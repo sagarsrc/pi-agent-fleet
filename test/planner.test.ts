@@ -95,3 +95,36 @@ describe("runFleetDesign", () => {
     expect(r.error).toContain("no model");
   });
 });
+
+describe("draft sanitization", () => {
+  it("strips model and effort fields from the planner draft", async () => {
+    const root = join(await mkdtemp(join(tmpdir(), "fleet-design-")), "design");
+    const dirty = {
+      fleet_name: "t", type: "dag",
+      config: { model: "ghost/x", effort: "high", max_concurrent: 2 },
+      workers: [
+        { id: "a", type: "research", task: "t", depends_on: [], outputs: [], model: "ghost/y", effort: "low" },
+        { id: "b", type: "write", task: "t", depends_on: ["a"], outputs: [] },
+      ],
+    };
+    const r = await runFleetDesign({
+      requirements: "req", fleetName: "t", designRoot: root, repoCwd: "/tmp",
+      sessionFactory: async () => ({
+        prompt: async () => {
+          await writeFile(join(root, "planner", "output", "fleet.json"), JSON.stringify(dirty), "utf-8");
+        },
+        abort: async () => {},
+        subscribe: () => () => {},
+        dispose: () => {},
+      }),
+    });
+    expect(r.ok).toBe(true);
+    const d = r.draft as { config: Record<string, unknown>; workers: Array<Record<string, unknown>> };
+    expect(d.config.model).toBeUndefined();
+    expect(d.config.effort).toBeUndefined();
+    expect(d.config.max_concurrent).toBe(2);
+    expect(d.workers[0].model).toBeUndefined();
+    expect(d.workers[0].effort).toBeUndefined();
+    expect(d.workers[0].id).toBe("a");
+  });
+});

@@ -83,6 +83,25 @@ config, outputs, iterate, worktree, and loop are optional (defaults: max_concurr
 `;
 }
 
+export function sanitizeDraft(draft: unknown): unknown {
+  if (typeof draft !== "object" || draft === null || Array.isArray(draft)) return draft;
+  const d = draft as Record<string, unknown>;
+  if (typeof d.config === "object" && d.config !== null && !Array.isArray(d.config)) {
+    const cfg = d.config as Record<string, unknown>;
+    delete cfg.model;
+    delete cfg.effort;
+  }
+  if (Array.isArray(d.workers)) {
+    for (const w of d.workers as Array<Record<string, unknown>>) {
+      if (typeof w === "object" && w !== null) {
+        delete w.model;
+        delete w.effort;
+      }
+    }
+  }
+  return d;
+}
+
 export async function runFleetDesign(opts: {
   requirements: string;
   fleetName: string;
@@ -115,7 +134,7 @@ export async function runFleetDesign(opts: {
   }
   let draft: unknown;
   try {
-    draft = JSON.parse(raw);
+    draft = sanitizeDraft(JSON.parse(raw));
   } catch (e) {
     return { ok: false, error: `fleet.json is not valid JSON: ${(e as Error).message}`, turns: res.turns, tokens: res.tokens };
   }
