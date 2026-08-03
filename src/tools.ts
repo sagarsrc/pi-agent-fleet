@@ -6,7 +6,7 @@ import { validateFleetSpec } from "./dag.js";
 import { insertWorkers } from "./insert.js";
 import { loadPreferences, mergeFleetConfig } from "./preferences.js";
 import { activeFleet, currentState, dagPreview, ensureCanvas, killFleet, prepareRelaunch, startLoop, statusText, stopCanvas, updateWidget } from "./controller.js";
-import { openInBrowser } from "./canvas.js";
+import { openInBrowser, listFleetRoots } from "./canvas.js";
 import { editConfig, editNode, type ConfigEditKey, type NodeEditKey } from "./edits.js";
 import { ensureFleetGitignore, fleetRootFor, isInsideGitRepo, writePlanFiles, writeWorkerPrompts } from "./fleet-store.js";
 import { resolveModelReference, validateFleetModels } from "./model-resolution.js";
@@ -326,6 +326,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
     promptSnippet: "Open the fleet browser canvas.",
     parameters: Type.Object({
       action: Type.Optional(Type.Union([Type.Literal("open"), Type.Literal("stop"), Type.Literal("url")])),
+      fleet: Type.Optional(Type.String({ description: "Fleet root dir basename under .fleet to visualize (e.g. energy-brief-20260803000000); omit for the live fleet" })),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
       const action = params.action ?? "url";
@@ -334,8 +335,14 @@ export function registerFleetTools(pi: ExtensionAPI): void {
         return textResult("fleet canvas stopped");
       }
       const server = await ensureCanvas(ctx);
-      if (action === "open") await openInBrowser(server.url);
-      return textResult(`fleet canvas: ${server.url}`, { url: server.url });
+      let url = server.url;
+      if (params.fleet) {
+        const roots = await listFleetRoots(ctx.cwd);
+        if (!roots.some((r) => r.name === params.fleet)) return textResult(`unknown fleet "${params.fleet}"`);
+        url = `${url}?fleet=${encodeURIComponent(params.fleet)}`;
+      }
+      if (action === "open") await openInBrowser(url);
+      return textResult(`fleet canvas: ${url}`, { url: server.url });
     },
   });
 }

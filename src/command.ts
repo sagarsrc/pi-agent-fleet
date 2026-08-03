@@ -2,7 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { activeFleet, currentState, ensureCanvas, killFleet, prepareRelaunch, startLoop, stopCanvas, updateWidget } from "./controller.js";
-import { openInBrowser } from "./canvas.js";
+import { openInBrowser, listFleetRoots } from "./canvas.js";
 import { insertWorkers } from "./insert.js";
 import { editConfig, editNode, type ConfigEditKey, type NodeEditKey } from "./edits.js";
 import { resolveModelReference } from "./model-resolution.js";
@@ -74,8 +74,17 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
           return;
         }
         const server = await ensureCanvas(ctx);
-        await openInBrowser(server.url);
-        ctx.ui.notify(`fleet canvas: ${server.url}`, "info");
+        let url = server.url;
+        if (sub) {
+          const roots = await listFleetRoots(ctx.cwd);
+          if (!roots.some((r) => r.name === sub)) {
+            ctx.ui.notify(`unknown fleet "${sub}" (see /api/fleets on the canvas server)`, "error");
+            return;
+          }
+          url = `${url}?fleet=${encodeURIComponent(sub)}`;
+        }
+        await openInBrowser(url);
+        ctx.ui.notify(`fleet canvas: ${url}`, "info");
         return;
       }
       const active = activeFleet.current;

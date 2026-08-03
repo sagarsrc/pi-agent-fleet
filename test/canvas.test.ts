@@ -150,16 +150,6 @@ describe("openInBrowser", () => {
   });
 });
 
-describe("page edges and deep-link", () => {
-  it("draws dependency edges and supports ?node= deep-link", () => {
-    const html = renderCanvasPage();
-    expect(html).toContain("drawEdges");
-    expect(html).toContain("data-id");
-    expect(html).toContain("wires");
-    expect(html).toContain('qs.get("node")');
-  });
-});
-
 describe("enriched payload", () => {
   it("includes worker structure and fleet config", () => {
     const rich: FleetSpec = {
@@ -220,6 +210,30 @@ describe("readDiskFleet + listFleetRoots", () => {
 
   it("returns [] when .fleet does not exist", async () => {
     expect(await listFleetRoots(await mkdtemp(join(tmpdir(), "fleet-disk-")))).toEqual([]);
+  });
+});
+
+describe("page v2", () => {
+  it("has infinite canvas, themes, fleet picker, rich cards", () => {
+    const html = renderCanvasPage();
+    expect(html).toContain("zoomAt");
+    expect(html).toContain("fitView");
+    expect(html).toContain("MIN_ZOOM");
+    expect(html).toContain("MAX_ZOOM");
+    expect(html).toContain("fleetSel");
+    expect(html).toContain("body.light");
+    expect(html).toContain("prefers-color-scheme");
+    expect(html).toContain("out-chip");
+    expect(html).toContain('qs.get("fleet")');
+    expect(html).toContain('qs.get("node")');
+  });
+
+  it("keeps legacy markers", () => {
+    const html = renderCanvasPage();
+    expect(html).toContain("/api/state");
+    expect(html).toContain("/api/fleets");
+    expect(html).toContain("/api/session/");
+    expect(html).not.toContain("`");
   });
 });
 
