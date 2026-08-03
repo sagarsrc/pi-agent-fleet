@@ -128,6 +128,7 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
 
   fleet.running = true;
   fleet.costWarned = false;
+  fleet.state = { ...fleet.state, status: "running" };
   const stopSpinner = startSpinner(ctx, fleet);
   updateWidget(ctx, fleet);
 

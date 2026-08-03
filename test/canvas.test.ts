@@ -147,3 +147,13 @@ describe("openInBrowser", () => {
     await openInBrowser("http://x", async () => { throw new Error("no opener"); }); // must not throw
   });
 });
+
+describe("page edges and deep-link", () => {
+  it("draws dependency edges and supports ?node= deep-link", () => {
+    const html = renderCanvasPage();
+    expect(html).toContain("drawEdges");
+    expect(html).toContain("data-id");
+    expect(html).toContain("wires");
+    expect(html).toContain('qs.get("node")');
+  });
+});

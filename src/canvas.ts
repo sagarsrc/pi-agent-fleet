@@ -120,8 +120,8 @@ header { padding:10px 16px; border-bottom:1px solid #21262d; display:flex; gap:1
 header .name { font-weight:700; color:#f0f6fc; }
 .pill { padding:1px 8px; border-radius:10px; border:1px solid #30363d; }
 main { display:flex; height:calc(100vh - 45px); }
-#dag { flex:1; overflow:auto; padding:16px; display:flex; gap:32px; align-items:flex-start; }
-.layer { display:flex; flex-direction:column; gap:10px; }
+#dag { flex:1; overflow:auto; padding:16px; display:flex; gap:32px; align-items:flex-start; position:relative; }
+.layer { display:flex; flex-direction:column; gap:10px; position:relative; z-index:1; }
 .node { border:1px solid #30363d; border-radius:8px; padding:8px 10px; min-width:220px; cursor:pointer; background:#161b22; }
 .node:hover { border-color:#58a6ff; }
 .node.sel { border-color:#58a6ff; box-shadow:0 0 0 1px #58a6ff; }
@@ -167,6 +167,43 @@ function layers(nodes, edges){
   ids.forEach(function(i){ if(!seen[i]) out.push([i]); });
   return out;
 }
+function drawEdges(s){
+  var dag = document.getElementById("dag");
+  var old = document.getElementById("wires");
+  if(old) old.parentNode.removeChild(old);
+  var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("id", "wires");
+  svg.setAttribute("width", dag.scrollWidth);
+  svg.setAttribute("height", dag.scrollHeight);
+  svg.style.position = "absolute";
+  svg.style.left = "0";
+  svg.style.top = "0";
+  svg.style.pointerEvents = "none";
+  svg.style.zIndex = "0";
+  s.edges.forEach(function(e){
+    var a = dag.querySelector('[data-id="' + e.from + '"]');
+    var b = dag.querySelector('[data-id="' + e.to + '"]');
+    if(!a || !b) return;
+    var x1 = a.offsetLeft + a.offsetWidth;
+    var y1 = a.offsetTop + a.offsetHeight/2;
+    var x2 = b.offsetLeft;
+    var y2 = b.offsetTop + b.offsetHeight/2;
+    var mx = (x1 + x2) / 2;
+    var p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("d", "M " + x1 + " " + y1 + " C " + mx + " " + y1 + ", " + mx + " " + y2 + ", " + x2 + " " + y2);
+    p.setAttribute("fill", "none");
+    p.setAttribute("stroke", "#3d444d");
+    p.setAttribute("stroke-width", "1.5");
+    svg.appendChild(p);
+    var ah = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    ah.setAttribute("d", "M " + (x2-6) + " " + (y2-4) + " L " + x2 + " " + y2 + " L " + (x2-6) + " " + (y2+4));
+    ah.setAttribute("fill", "none");
+    ah.setAttribute("stroke", "#3d444d");
+    ah.setAttribute("stroke-width", "1.5");
+    svg.appendChild(ah);
+  });
+  dag.appendChild(svg);
+}
 function tick(){
   j("/api/state").then(function(s){
     var hdr = document.getElementById("hdr");
@@ -189,7 +226,7 @@ function tick(){
     dag.innerHTML = L.map(function(layer){
       return '<div class="layer">' + layer.map(function(id){
         var n = s.nodes.filter(function(x){ return x.id===id; })[0];
-        return '<div class="node st-' + esc(n.status) + (selected===n.id?" sel":"") + '" onclick="sel(\\'' + n.id + '\\')">'
+        return '<div class="node st-' + esc(n.status) + (selected===n.id?" sel":"") + '" data-id="' + n.id + '" onclick="sel(\\'' + n.id + '\\')">'
           + '<div class="nid">' + esc(n.id) + '</div>'
           + '<div class="meta">' + esc(n.status) + ' · ' + esc(n.model) + (n.effort ? " · " + esc(n.effort) : "") + '</div>'
           + '<div class="meta">' + n.turns + ' turns · ' + (n.tokens/1000).toFixed(1) + 'k tok · $' + n.cost_usd_estimate.toFixed(2) + '</div>'
@@ -198,6 +235,7 @@ function tick(){
       }).join("") + '</div>';
     }).join("");
     dag.scrollTop = st;
+    drawEdges(s);
   }).catch(function(){ var hdr = document.getElementById("hdr"); hdr.innerHTML = '<span class="pill">connection lost</span>'; });
 }
 function side(){
@@ -220,6 +258,9 @@ function sel(id){
 setInterval(tick, 1500);
 setInterval(side, 2000);
 tick();
+var qs = new URLSearchParams(location.search);
+var pre = qs.get("node");
+if(pre) sel(pre);
 </script>
 </body>
 </html>`;
