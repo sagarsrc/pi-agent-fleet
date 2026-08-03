@@ -192,14 +192,14 @@ function drawEdges(s){
     var p = document.createElementNS("http://www.w3.org/2000/svg", "path");
     p.setAttribute("d", "M " + x1 + " " + y1 + " C " + mx + " " + y1 + ", " + mx + " " + y2 + ", " + x2 + " " + y2);
     p.setAttribute("fill", "none");
-    p.setAttribute("stroke", "#3d444d");
-    p.setAttribute("stroke-width", "1.5");
+    p.setAttribute("stroke", "#6e7681");
+    p.setAttribute("stroke-width", "2");
     svg.appendChild(p);
     var ah = document.createElementNS("http://www.w3.org/2000/svg", "path");
     ah.setAttribute("d", "M " + (x2-6) + " " + (y2-4) + " L " + x2 + " " + y2 + " L " + (x2-6) + " " + (y2+4));
     ah.setAttribute("fill", "none");
-    ah.setAttribute("stroke", "#3d444d");
-    ah.setAttribute("stroke-width", "1.5");
+    ah.setAttribute("stroke", "#6e7681");
+    ah.setAttribute("stroke-width", "2");
     svg.appendChild(ah);
   });
   dag.appendChild(svg);
