@@ -9,7 +9,14 @@ DAG-of-agents fleets for [pi](https://github.com/earendil-works/pi-coding-agent)
 └─ ○ reviewer (k3) · waiting on builder-relaunch
 ```
 
+## Demo
+
+Live browser canvas — per-node status, turns, tokens, cost, and click-to-peek session tail:
+
 ![Fleet canvas — live DAG with per-node cost and status](assets/canvas.png)
+
+Node detail side panel — peek a running node's recent session without leaving the canvas:
+
 ![Fleet canvas — click a node to peek its session tail](assets/canvas-node-peek.png)
 
 ## Why
@@ -35,25 +42,50 @@ Ask your pi session (the LLM drives the tools):
 > combiner (depends on both) writes output/sum.md with the total.
 > Each declares its output as a markdown contract.
 
-The agent calls `fleet_plan` (validates + ASCII preview), you confirm, `fleet_launch` runs it. Watch the live widget; read the report at `.fleet/<name>-<ts>/report.md`.
+The agent calls `fleet_design` (if you describe it in prose) or `fleet_plan` (if you already have JSON), you confirm the preview, then `fleet_launch` runs it. Watch the live widget or open the browser canvas; read the report at `.fleet/<name>-<ts>/report.md`.
 
-## Fleet modes
-
-**One-shot DAG** — static dependency graph, parallel layers, contracts at exit:
+## Writing a fleet
 
 ```json
 {
   "fleet_name": "auth-research",
   "type": "dag",
-  "config": { "max_concurrent": 4, "model": "gpt-5.4-mini" },
+  "config": {
+    "max_concurrent": 4,
+    "model": "gpt-5.4-mini",
+    "effort": "medium",
+    "warn_cost_usd": 10
+  },
   "workers": [
-    { "id": "research", "type": "research", "task": "…",
-      "outputs": [{ "path": "output/findings.md", "kind": "markdown", "required": true }] },
-    { "id": "build", "type": "code-run", "task": "…", "depends_on": ["research"],
-      "outputs": [{ "path": "src/auth/login.ts", "kind": "file-exists", "required": true }] }
+    {
+      "id": "research",
+      "type": "research",
+      "task": "…",
+      "outputs": [{ "path": "output/findings.md", "kind": "markdown", "required": true }]
+    },
+    {
+      "id": "build",
+      "type": "code-run",
+      "task": "…",
+      "depends_on": ["research"],
+      "model": "kimi-coding/k3",
+      "effort": "high",
+      "outputs": [{ "path": "src/auth/login.ts", "kind": "file-exists", "required": true }]
+    }
   ]
 }
 ```
+
+- `config.model` / `config.effort` — fleet-wide defaults; per-worker `model` and `effort` override.
+- `effort` maps to pi thinking levels: `off | minimal | low | medium | high | xhigh | max`.
+- `config.warn_cost_usd` — soft cost guardrail surfaced in the live widget.
+- `iterate: false` — run the node once at iteration 1 and carry its outputs forward.
+- `worktree: true` — run the node in a dedicated git worktree.
+- Worker types `research`, `code-run`, `reviewer`, `write`, `read-only` each get a tailored tool set.
+
+## Fleet modes
+
+**One-shot DAG** — static dependency graph, parallel layers, contracts at exit.
 
 **Iterative fleet** — reviewer-gated replay until quality passes:
 
@@ -80,7 +112,8 @@ Every worker declares `outputs[]` with kinds, verified in code at worker exit be
 | `markdown` | exists, non-empty, starts with `#` |
 | `file-exists` | exists, non-empty (repo-relative paths = code edits) |
 | `verdict` | `verdict: lgtm\|iterate\|escalate` line + non-empty body |
-| `json` / `yaml` | parses |
+| `json` | parses as JSON |
+| `yaml` | parses as YAML |
 
 Failed required contract → `contract_failed`, dependents blocked, orchestrator notified. No silent passes.
 
@@ -88,28 +121,52 @@ Failed required contract → `contract_failed`, dependents blocked, orchestrator
 
 | tool | purpose |
 |---|---|
+| `fleet_design` | draft a fleet DAG from plain-language requirements (planner agent → validated JSON + preview) |
 | `fleet_plan` | validate + preview a fleet definition (no launch) |
-| `fleet_launch` | launch (confirm gate, `skip_confirm` for unattended) |
-| `fleet_status` | live DAG status |
-| `fleet_pause` / `fleet_resume` | pause/resume loop fleets at iteration boundary |
-| `fleet_relaunch` | re-run a failed node (+ blocked downstream), optional model override |
-| `fleet_kill` | fleet-wide kill |
-| `fleet_report` | regenerate report.md |
-| `fleet_canvas` | open browser canvas; `?demo=1` shows synthetic data for UI iteration |
+| `fleet_launch` | launch the planned fleet after user confirmation; `skip_confirm` for unattended runs |
+| `fleet_status` | live DAG status and widget lines |
+| `fleet_pause` / `fleet_resume` | pause/resume loop fleets at the next iteration boundary |
+| `fleet_kill` | kill all, or kill a single node by worker id |
+| `fleet_relaunch` | re-run a failed/killed node and its blocked downstream; optional model override |
+| `fleet_add_node` | insert new workers into a running fleet mid-flight |
+| `fleet_edit` | edit a pending node's model/effort/task, or fleet config mid-run |
+| `fleet_report` | regenerate the fleet markdown report |
+| `fleet_canvas` | open a browser canvas; `?demo=1` shows synthetic data for UI iteration |
 
-`/fleet viz | status | clear | pause | resume | relaunch <id> [model] | kill all | canvas [open|url|stop]`
+`/fleet viz | status | clear | pause | resume | kill all|<node_id> | relaunch <id> [model] | add <json> | edit <node_id>|config ... | configure [show|set k v] | canvas [open|url|stop]`
+
+## Runtime mutation
+
+Fleets are not frozen after launch. You can kill a single stuck node, relaunch it with a stronger model, edit a pending node's task, or inject new workers with `fleet_add_node`. Inserted nodes validate against the existing DAG (unique ids, acyclic, loop-gate rules) and start dispatching as soon as their dependencies complete.
+
+## Preferences
+
+Set fleet-wide defaults in `~/.pi/agent/fleet.json`:
+
+```json
+{
+  "max_concurrent": 4,
+  "model": "gpt-5.4-mini",
+  "effort": "medium",
+  "warn_cost_usd": 10
+}
+```
+
+These are merged into `fleet_plan` results. Manage them with `/fleet configure show | set <key> <value>`.
 
 ## Records
 
-Everything lands in `.fleet/<name>-<ts>/` (git-ignored): `state.json` (single source of truth, atomic writes), per-worker `prompt.md` + `session.jsonl` + outputs, per-iteration archives, and a machine-written `report.md` with per-worker turns/tokens/cost, contract results, verdict history, and git diff stats.
+Everything lands in `.fleet/<name>-<ts>/` (git-ignored): `state.json` (single source of truth, atomic writes), per-worker `prompt.md` + `session.jsonl` + outputs, per-iteration archives, and a machine-written `report.md` with per-worker turns/tokens/cost, contract results, verdict history, and git diff stats. Completed nodes keep their stats visible in the widget and report after the fleet ends.
 
-## Model selection
+## Model selection and effort
 
-Fleet-wide default via `config.model`; per-node override via `worker.model`. Any model pi can resolve — including any provider pi is logged into. Cheap models for trivial writers, strong models for reviewers:
+Fleet-wide default via `config.model` and `config.effort`; per-node override via `worker.model` and `worker.effort`. Any model pi can resolve works, including any provider pi is logged into. Cheap models for trivial writers, strong models for reviewers:
 
 ```json
-{ "id": "reviewer", "type": "reviewer", "model": "kimi-coding/k3", … }
+{ "id": "reviewer", "type": "reviewer", "model": "kimi-coding/k3", "effort": "high" }
 ```
+
+Model refs are validated at plan and launch time so bad names fail fast. There is no baked-in default provider: the extension uses whatever pi has configured.
 
 ## Development
 
