@@ -101,6 +101,78 @@ describe("effort validation", () => {
   });
 });
 
+describe("worktree validation", () => {
+  it("auto-injects integrator for multiple worktrees", () => {
+    const r = validateFleetSpec({
+      fleet_name: "wt", type: "dag", config: { max_concurrent: 2 },
+      workers: [
+        { id: "a", type: "code-run", task: "t", depends_on: [], outputs: [], worktree: true },
+        { id: "b", type: "code-run", task: "t", depends_on: [], outputs: [], worktree: true },
+      ],
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.spec.workers.some((w) => w.id === "fleet-integrator")).toBe(true);
+      const integrator = r.spec.workers.find((w) => w.id === "fleet-integrator")!;
+      expect(integrator.depends_on.sort()).toEqual(["a", "b"]);
+    }
+  });
+
+  it("rejects an existing fleet-integrator that does not depend on all worktree workers", () => {
+    const r = validateFleetSpec({
+      fleet_name: "wt", type: "dag", config: { max_concurrent: 2 },
+      workers: [
+        { id: "a", type: "code-run", task: "t", depends_on: [], outputs: [], worktree: true },
+        { id: "b", type: "code-run", task: "t", depends_on: [], outputs: [], worktree: true },
+        { id: "fleet-integrator", type: "code-run", task: "partial merge", depends_on: ["a"], outputs: [] },
+      ],
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.some((e) => e.includes("integrator"))).toBe(true);
+  });
+
+  it("auto-injects integrator when missing", () => {
+    const r = validateFleetSpec({
+      fleet_name: "wt", type: "dag", config: { max_concurrent: 2 },
+      workers: [
+        { id: "a", type: "code-run", task: "t", depends_on: [], outputs: [], worktree: true },
+        { id: "b", type: "code-run", task: "t", depends_on: ["a"], outputs: [], worktree: true },
+      ],
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.spec.workers.some((w) => w.id === "fleet-integrator")).toBe(true);
+      const integrator = r.spec.workers.find((w) => w.id === "fleet-integrator")!;
+      expect(integrator.depends_on.sort()).toEqual(["a", "b"]);
+    }
+  });
+
+  it("rejects overlapping repo-relative outputs without ordered handoff", () => {
+    const r = validateFleetSpec({
+      fleet_name: "wt", type: "dag", config: { max_concurrent: 2 },
+      workers: [
+        { id: "a", type: "code-run", task: "t", depends_on: [], outputs: [{ path: "src/x.ts", kind: "file-exists", required: true }], worktree: true },
+        { id: "b", type: "code-run", task: "t", depends_on: [], outputs: [{ path: "src/x.ts", kind: "file-exists", required: true }], worktree: true },
+        { id: "i", type: "code-run", task: "merge", depends_on: ["a", "b"], outputs: [] },
+      ],
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.some((e) => e.includes("ownership conflict"))).toBe(true);
+  });
+
+  it("permits overlapping outputs with ordered handoff", () => {
+    const r = validateFleetSpec({
+      fleet_name: "wt", type: "dag", config: { max_concurrent: 2 },
+      workers: [
+        { id: "a", type: "code-run", task: "t", depends_on: [], outputs: [{ path: "src/x.ts", kind: "file-exists", required: true }], worktree: true },
+        { id: "b", type: "code-run", task: "t", depends_on: ["a"], outputs: [{ path: "src/x.ts", kind: "file-exists", required: true }], worktree: true },
+        { id: "i", type: "code-run", task: "merge", depends_on: ["b"], outputs: [] },
+      ],
+    });
+    expect(r.ok).toBe(true);
+  });
+});
+
 describe("getDependents", () => {
   it("returns direct dependents", () => {
     const r = validateFleetSpec(base);

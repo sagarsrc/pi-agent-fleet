@@ -1,11 +1,23 @@
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { runFleet } from "../src/scheduler.js";
 import { patchNode, initFleetState } from "../src/state.js";
 import { buildWidgetLines } from "../src/ui.js";
+import { validateFleetSpec } from "../src/dag.js";
 import type { FleetSpec } from "../src/types.js";
+
+const execFileP = promisify(execFile);
+
+async function initRepo(dir: string) {
+  await execFileP("git", ["init"], { cwd: dir });
+  await execFileP("git", ["config", "user.email", "test@test.com"], { cwd: dir });
+  await execFileP("git", ["config", "user.name", "Test"], { cwd: dir });
+  await execFileP("git", ["commit", "--allow-empty", "-m", "init"], { cwd: dir });
+}
 
 function spec(): FleetSpec {
   return {
@@ -181,5 +193,80 @@ describe("runFleet", () => {
     });
     expect(s.nodes.c.status).toBe("completed");
     expect(mirror.nodes.c.status).toBe("completed");
+  });
+});
+
+describe("runFleet worktrees", () => {
+  async function gitRoot() {
+    const base = await mkdtemp(join(tmpdir(), "fleet-sched-git-"));
+    await initRepo(base);
+    return base;
+  }
+
+  function worktreeSpec(): FleetSpec {
+    return {
+      fleet_name: "wt", type: "dag",
+      config: { max_concurrent: 2, model: "k2p6" },
+      workers: [
+        { id: "a", type: "code-run", task: "write a", depends_on: [], outputs: [{ path: "a.txt", kind: "file-exists", required: true }], worktree: true },
+        { id: "b", type: "code-run", task: "write b", depends_on: [], outputs: [{ path: "b.txt", kind: "file-exists", required: true }], worktree: true },
+      ],
+    };
+  }
+
+  async function fleetRoot(base: string) {
+    const r = join(base, ".fleet", "f-1");
+    await mkdir(join(r, "workers", "a", "output"), { recursive: true });
+    await mkdir(join(r, "workers", "b", "output"), { recursive: true });
+    await mkdir(join(r, "workers", "fleet-integrator", "output"), { recursive: true });
+    return r;
+  }
+
+  it("creates worktrees, commits, merges, and completes integrator", async () => {
+    const base = await gitRoot();
+    const root = await fleetRoot(base);
+    const v = validateFleetSpec(worktreeSpec());
+    expect(v.ok).toBe(true);
+    if (!v.ok) return;
+    const s = await runFleet({
+      spec: v.spec,
+      fleetRoot: root,
+      baseRepo: base,
+      repoCwd: (nodeId) => join(root, "worktrees", nodeId),
+      spawn: async (id) => {
+        if (id === "a" || id === "b") {
+          await writeFile(join(root, "worktrees", id, `${id}.txt`), id, "utf-8");
+        }
+        return { ok: true, turns: 1, tokens: 10 };
+      },
+    });
+    expect(s.nodes.a.status).toBe("completed");
+    expect(s.nodes.b.status).toBe("completed");
+    expect(s.nodes["fleet-integrator"].status).toBe("completed");
+  });
+
+  it("fails integrator when worktree branches conflict", async () => {
+    const base = await gitRoot();
+    const root = await fleetRoot(base);
+    const v = validateFleetSpec(worktreeSpec());
+    expect(v.ok).toBe(true);
+    if (!v.ok) return;
+    const s = await runFleet({
+      spec: v.spec,
+      fleetRoot: root,
+      baseRepo: base,
+      repoCwd: (nodeId) => join(root, "worktrees", nodeId),
+      spawn: async (id) => {
+        if (id === "a" || id === "b") {
+          await writeFile(join(root, "worktrees", id, `${id}.txt`), id, "utf-8");
+          await writeFile(join(root, "worktrees", id, "shared.txt"), id, "utf-8");
+        }
+        return { ok: true, turns: 1, tokens: 10 };
+      },
+    });
+    expect(s.nodes.a.status).toBe("completed");
+    expect(s.nodes.b.status).toBe("completed");
+    expect(s.nodes["fleet-integrator"].status).toBe("failed");
+    expect(s.nodes["fleet-integrator"].status_note).toContain("merge");
   });
 });

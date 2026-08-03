@@ -4,12 +4,14 @@ import { verifyOutputs } from "./contracts.js";
 import { archiveIteration, initFleetState, patchNode, resetForIteration, snapshotIteration, writeState } from "./state.js";
 import { TERMINAL_NODE_STATUSES } from "./types.js";
 import type { FleetSpec, FleetState, IterationSnapshot, NodeState, Verdict, WorkerSpec } from "./types.js";
+import { commitWorktree, createWorktree, prepareIntegratorWorktree } from "./worktree.js";
 
 export type SpawnFn = (nodeId: string) => Promise<{ ok: boolean; turns: number; tokens: number; cost?: number; error?: string }>;
 
 export interface RunFleetOpts {
   spec: FleetSpec;
   fleetRoot: string;
+  baseRepo?: string;
   repoCwd: string | ((nodeId: string) => string);
   spawn: SpawnFn;
   onNodeChange?: (nodeId: string, s: NodeState) => void;
@@ -72,6 +74,41 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
   const repoCwdFor = (nodeId: string): string =>
     typeof opts.repoCwd === "function" ? opts.repoCwd(nodeId) : opts.repoCwd;
 
+  const baseRepo = (): string | undefined =>
+    opts.baseRepo ?? (typeof opts.repoCwd === "string" ? opts.repoCwd : undefined);
+
+  function orderedWorktreeBranches(spec: FleetSpec): string[] {
+    const ids = spec.workers.filter((w) => w.worktree).map((w) => w.id);
+    const set = new Set(ids);
+    const indeg = new Map(ids.map((id) => [id, 0]));
+    const rev = new Map(ids.map((id) => [id, [] as string[]]));
+    for (const w of spec.workers) {
+      if (!set.has(w.id)) continue;
+      for (const d of w.depends_on) {
+        if (set.has(d)) {
+          indeg.set(w.id, (indeg.get(w.id) ?? 0) + 1);
+          rev.get(d)?.push(w.id);
+        }
+      }
+    }
+    const sorted: string[] = [];
+    let current = ids.filter((id) => indeg.get(id) === 0);
+    while (current.length > 0) {
+      sorted.push(...current);
+      const next: string[] = [];
+      for (const id of current) {
+        for (const m of rev.get(id) ?? []) {
+          const v = (indeg.get(m) ?? 0) - 1;
+          indeg.set(m, v);
+          if (v === 0) next.push(m);
+        }
+      }
+      current = next;
+    }
+    if (sorted.length !== ids.length) sorted.push(...ids.filter((id) => !sorted.includes(id)));
+    return sorted.map((id) => `fleet/${spec.fleet_name}/${id}`);
+  }
+
   const runPass = async (): Promise<void> => {
     while (true) {
       // auto-initialize workers inserted into the spec after the run started
@@ -122,6 +159,61 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
         const depsDone = w.depends_on.every((d) => state.nodes[d]?.status === "completed");
         if (!depsDone) continue;
         slots--;
+
+        if (w.worktree) {
+          const repo = baseRepo();
+          if (!repo) {
+            await patch(w.id, {
+              status: "failed",
+              ended_at: new Date().toISOString(),
+              status_note: "worktree worker requires a baseRepo",
+            });
+            continue;
+          }
+          try {
+            await createWorktree({
+              baseRepo: repo,
+              fleetName: spec.fleet_name,
+              nodeId: w.id,
+              fleetRoot,
+            });
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            await patch(w.id, {
+              status: "failed",
+              ended_at: new Date().toISOString(),
+              status_note: `worktree creation failed: ${msg}`,
+            });
+            continue;
+          }
+        }
+
+        if (w.id === "fleet-integrator") {
+          const repo = baseRepo();
+          if (!repo) {
+            await patch(w.id, {
+              status: "failed",
+              ended_at: new Date().toISOString(),
+              status_note: "integrator requires a baseRepo",
+            });
+            continue;
+          }
+          const prep = await prepareIntegratorWorktree({
+            baseRepo: repo,
+            fleetName: spec.fleet_name,
+            fleetRoot,
+            branches: orderedWorktreeBranches(spec),
+          });
+          if (!prep.ok) {
+            await patch(w.id, {
+              status: "failed",
+              ended_at: new Date().toISOString(),
+              status_note: prep.conflict,
+            });
+            continue;
+          }
+        }
+
         await patch(w.id, { status: "running", started_at: new Date().toISOString() });
         const p = opts.spawn(w.id).then(async (res) => {
           if (opts.killSwitch?.killed) return;
@@ -132,6 +224,27 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
           if (!res.ok) {
             await patch(w.id, { status: "failed", ended_at: new Date().toISOString(), turns: res.turns, tokens: res.tokens, cost_usd_estimate: res.cost ?? 0 });
             return;
+          }
+          if (w.worktree) {
+            try {
+              await commitWorktree({
+                worktreePath: repoCwdFor(w.id),
+                nodeId: w.id,
+                fleetName: spec.fleet_name,
+                iteration: state.iteration,
+              });
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              await patch(w.id, {
+                status: "failed",
+                ended_at: new Date().toISOString(),
+                turns: res.turns,
+                tokens: res.tokens,
+                cost_usd_estimate: res.cost ?? 0,
+                status_note: `commit failed: ${msg}`,
+              });
+              return;
+            }
           }
           const contract = await verifyOutputs({
             workerDir: `${fleetRoot}/workers/${w.id}`,

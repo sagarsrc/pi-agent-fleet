@@ -49,6 +49,47 @@ export function getDependents(spec: FleetSpec, nodeId: string): string[] {
   return spec.workers.filter((w) => w.depends_on.includes(nodeId)).map((w) => w.id);
 }
 
+function findWorktreeOwnershipConflicts(workers: WorkerSpec[]): string[] {
+  const worktrees = workers.filter((w) => w.worktree);
+  const claims = new Map<string, string[]>();
+  for (const w of worktrees) {
+    for (const o of w.outputs) {
+      if (!o.path.startsWith("output/")) {
+        const list = claims.get(o.path) ?? [];
+        list.push(w.id);
+        claims.set(o.path, list);
+      }
+    }
+  }
+  const errors: string[] = [];
+  const byId = new Map(workers.map((w) => [w.id, w]));
+  for (const [path, ids] of claims) {
+    if (ids.length < 2) continue;
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const a = ids[i], b = ids[j];
+        const aBeforeB = byId.get(a)!.depends_on.includes(b);
+        const bBeforeA = byId.get(b)!.depends_on.includes(a);
+        if (!aBeforeB && !bBeforeA) {
+          errors.push(`worktree ownership conflict: "${path}" claimed by "${a}" and "${b}" without ordered handoff`);
+        }
+      }
+    }
+  }
+  return errors;
+}
+
+function hasIntegratorPath(workers: WorkerSpec[]): boolean {
+  const worktreeIds = new Set(workers.filter((w) => w.worktree).map((w) => w.id));
+  if (worktreeIds.size < 2) return true;
+  return workers.some((w) => {
+    if (w.worktree) return false;
+    const deps = new Set(w.depends_on);
+    for (const id of worktreeIds) if (!deps.has(id)) return false;
+    return true;
+  });
+}
+
 export function validateFleetSpec(
   raw: unknown,
 ): { ok: true; spec: FleetSpec; layers: string[][] } | { ok: false; errors: string[] } {
@@ -113,6 +154,23 @@ export function validateFleetSpec(
     for (const d of w.depends_on) {
       if (!idSet.has(d)) errors.push(`worker "${w.id}": unknown dependency "${d}"`);
     }
+  }
+
+  const worktreeIds = new Set(workers.filter((w) => w.worktree).map((w) => w.id));
+  if (worktreeIds.size >= 2) {
+    if (!workers.some((w) => w.id === "fleet-integrator")) {
+      workers.push({
+        id: "fleet-integrator",
+        type: "code-run",
+        task: `Merge worktree branches in order: ${[...worktreeIds].join(", ")}. Verify the combined repo is consistent and commit if needed.`,
+        depends_on: [...worktreeIds],
+        outputs: [],
+      });
+    }
+    if (!hasIntegratorPath(workers)) {
+      errors.push("multiple worktree workers require an integrator that depends on all worktree workers");
+    }
+    errors.push(...findWorktreeOwnershipConflicts(workers));
   }
 
   let loopConfig: LoopConfig | undefined;
