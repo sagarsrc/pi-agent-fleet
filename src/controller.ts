@@ -166,12 +166,15 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
       const prompt = await readFile(join(fleet.fleetRoot, "workers", nodeId, "prompt.md"), "utf-8");
       const sessionDir = join(fleet.fleetRoot, "workers", nodeId);
       const effort = worker.effort ?? fleet.spec.config.effort ?? "medium";
+      const worktreeCwd = worker?.worktree || worker?.id === "fleet-integrator"
+        ? join(fleet.fleetRoot, "worktrees", nodeId)
+        : ctx.cwd;
       try {
         return await runWorker({
           nodeId,
           worker: workerWithResolvedModel(worker, resolvedModel),
           prompt,
-          repoCwd: ctx.cwd,
+          repoCwd: worktreeCwd,
           sessionDir,
           thinkingLevel: effort,
           sessionFactory: resolvedModel ? sessionFactoryForModel(resolvedModel) : undefined,
@@ -200,9 +203,12 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
     const state = await runFleet({
       spec: fleet.spec,
       fleetRoot: fleet.fleetRoot,
+      baseRepo: ctx.cwd,
       repoCwd: (nodeId) => {
         const worker = fleet.spec.workers.find((w) => w.id === nodeId);
-        return worker?.worktree ? join(fleet.fleetRoot, "worktrees", nodeId) : ctx.cwd;
+        return worker?.worktree || worker?.id === "fleet-integrator"
+          ? join(fleet.fleetRoot, "worktrees", nodeId)
+          : ctx.cwd;
       },
       spawn,
       killSwitch: fleet.killSwitch,
