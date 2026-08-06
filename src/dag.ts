@@ -49,10 +49,9 @@ export function getDependents(spec: FleetSpec, nodeId: string): string[] {
   return spec.workers.filter((w) => w.depends_on.includes(nodeId)).map((w) => w.id);
 }
 
-function findWorktreeOwnershipConflicts(workers: WorkerSpec[]): string[] {
-  const worktrees = workers.filter((w) => w.worktree);
+export function findRepoOutputOwnershipConflicts(workers: WorkerSpec[]): string[] {
   const claims = new Map<string, string[]>();
-  for (const w of worktrees) {
+  for (const w of workers) {
     for (const o of w.outputs) {
       if (!o.path.startsWith("output/")) {
         const list = claims.get(o.path) ?? [];
@@ -71,7 +70,7 @@ function findWorktreeOwnershipConflicts(workers: WorkerSpec[]): string[] {
         const aBeforeB = byId.get(a)!.depends_on.includes(b);
         const bBeforeA = byId.get(b)!.depends_on.includes(a);
         if (!aBeforeB && !bBeforeA) {
-          errors.push(`worktree ownership conflict: "${path}" claimed by "${a}" and "${b}" without ordered handoff`);
+          errors.push(`repo output ownership conflict: "${path}" claimed by "${a}" and "${b}" without ordered handoff`);
         }
       }
     }
@@ -196,8 +195,8 @@ export function validateFleetSpec(
     if (!hasIntegratorPath(workers)) {
       errors.push("multiple worktree workers require an integrator that depends on all worktree workers");
     }
-    errors.push(...findWorktreeOwnershipConflicts(workers));
   }
+  errors.push(...findRepoOutputOwnershipConflicts(workers));
 
   let loopConfig: LoopConfig | undefined;
   if (cfg.loop !== undefined && cfg.loop !== null) {
