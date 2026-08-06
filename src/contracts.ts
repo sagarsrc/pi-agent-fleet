@@ -49,7 +49,7 @@ async function checkOne(workerDir: string, repoCwd: string, o: ContractOutput): 
       if (o.schema) {
         if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return fail("json schema requires an object");
         const obj = parsed as Record<string, unknown>;
-        for (const key of o.schema.required_keys ?? []) if (!(key in obj)) return fail(`missing required key "${key}"`);
+        for (const key of o.schema.required_keys ?? []) if (!Object.hasOwn(obj, key)) return fail(`missing required key "${key}"`);
         for (const key of o.schema.number_keys ?? []) {
           const v = obj[key];
           const ok = typeof v === "number" || (Array.isArray(v) && v.every((x) => typeof x === "number"));

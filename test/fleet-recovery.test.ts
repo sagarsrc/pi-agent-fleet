@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { activeFleet, killFleet } from "../src/controller.js";
+import { activeFleet, killFleet, type ActiveFleet } from "../src/controller.js";
 import { listFleetRoots, readDiskFleet, recoverLatestFleet } from "../src/fleet-recovery.js";
 import { initFleetState } from "../src/state.js";
 import type { FleetSpec } from "../src/types.js";
@@ -57,6 +57,26 @@ describe("killFleet on a disk-recovered fleet still running elsewhere", () => {
       expect(msg).not.toContain('node "a" killed');
       const persisted = JSON.parse(await readFile(join(root, "state.json"), "utf-8"));
       expect(persisted.nodes.a.status).toBe("running");
+      expect(persisted.status).toBe("running");
+    } finally {
+      activeFleet.current = undefined;
+    }
+  });
+
+  it('warns instead of setting the kill switch for target "all" when disk state.status is running', async () => {
+    const dir = await mkdtemp(join(tmpdir(), "fleet-recover-"));
+    const root = await diskRoot(dir);
+    const runningState = { ...initFleetState(minimalSpec), status: "running" as const };
+    runningState.nodes.a = { ...runningState.nodes.a, status: "running" as const };
+    await writeFile(join(root, "state.json"), JSON.stringify(runningState), "utf-8");
+    activeFleet.current = undefined;
+    try {
+      const msg = await killFleet("all", dir);
+      expect(msg).toContain("another live session");
+      expect(msg).not.toContain("fleet kill requested");
+      const current = activeFleet.current as ActiveFleet | undefined;
+      expect(current?.killSwitch.killed).toBe(false);
+      const persisted = JSON.parse(await readFile(join(root, "state.json"), "utf-8"));
       expect(persisted.status).toBe("running");
     } finally {
       activeFleet.current = undefined;

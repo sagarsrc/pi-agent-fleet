@@ -121,7 +121,7 @@ Every worker declares `outputs[]` with kinds, verified in code at worker exit be
 | `json` | parses as JSON; optional `schema` checks (below) |
 | `yaml` | parses as YAML |
 
-JSON outputs may declare a `schema` with `required_keys` (keys that must exist) and `number_keys` (keys that must be numbers or arrays of numbers). Schemas are only allowed on `kind: "json"` outputs, are injected into the worker's prompt, and are enforced at contract check:
+JSON outputs may declare a `schema` with `required_keys` (keys that must exist) and `number_keys` (keys that must be numbers or arrays of numbers). Schemas are only allowed on `kind: "json"` outputs, are injected into the worker's prompt, and are enforced at contract check. When a `schema` is present, the JSON must be a top-level object (arrays and scalars fail):
 
 ```json
 { "path": "output/sum.json", "kind": "json", "required": true,
@@ -186,7 +186,7 @@ Model refs are validated at plan and launch time so bad names fail fast. There i
 
 ```bash
 npm install
-npm test          # 232 tests, zero-API (fake session factory)
+npm test          # 274 tests, zero-API (fake session factory)
 npm run typecheck
 ```
 
