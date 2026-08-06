@@ -5,7 +5,7 @@ import { activeFleet, currentState, ensureCanvas, killFleet, prepareRelaunch, st
 import { openInBrowser, listFleetRoots } from "./canvas.js";
 import { insertWorkers } from "./insert.js";
 import { editConfig, editNode, type ConfigEditKey, type NodeEditKey } from "./edits.js";
-import { resolveModelReference } from "./model-resolution.js";
+import { listModelRefs, resolveModelReference } from "./model-resolution.js";
 import { clearPreference, loadPreferences, PREFERENCE_KEYS, savePreferences, setPreference } from "./preferences.js";
 import { resetForRelaunch, writeState } from "./state.js";
 import { buildWidgetLines } from "./ui.js";
@@ -13,7 +13,7 @@ import { renderDag } from "./viz.js";
 
 export function registerFleetCommand(pi: ExtensionAPI): void {
   pi.registerCommand("fleet", {
-    description: "Fleet commands: /fleet viz, /fleet status, /fleet canvas [stop], /fleet configure [show|set k v], /fleet add <json>, /fleet edit <node_id>|config ..., /fleet clear, /fleet kill all|<node_id>, /fleet pause, /fleet resume, /fleet relaunch <node_id> [model]",
+    description: "Fleet commands: /fleet viz, /fleet status, /fleet models, /fleet canvas [stop], /fleet configure [show|set k v], /fleet add <json>, /fleet edit <node_id>|config ..., /fleet clear, /fleet kill all|<node_id>, /fleet pause, /fleet resume, /fleet relaunch <node_id> [model]",
     handler: async (args, ctx) => {
       const [cmd, target] = args.trim().split(/\s+/);
       if (cmd === "configure") {
@@ -85,6 +85,10 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
         }
         await openInBrowser(url);
         ctx.ui.notify(`fleet canvas: ${url}`, "info");
+        return;
+      }
+      if (cmd === "models") {
+        ctx.ui.notify(`available models:\n${listModelRefs(ctx.modelRegistry).join("\n")}`, "info");
         return;
       }
       const active = activeFleet.current;
@@ -241,7 +245,7 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
         if (r.ok) updateWidget(ctx, active);
         return;
       }
-      ctx.ui.notify("usage: /fleet viz | /fleet status | /fleet canvas [stop] | /fleet configure [show|set k v] | /fleet add <json> | /fleet edit <node_id>|config ... | /fleet clear | /fleet kill all|<node_id> | /fleet pause | /fleet resume | /fleet relaunch <node_id> [model]", "warning");
+      ctx.ui.notify("usage: /fleet viz | /fleet status | /fleet models | /fleet canvas [stop] | /fleet configure [show|set k v] | /fleet add <json> | /fleet edit <node_id>|config ... | /fleet clear | /fleet kill all|<node_id> | /fleet pause | /fleet resume | /fleet relaunch <node_id> [model]", "warning");
     },
   });
 }

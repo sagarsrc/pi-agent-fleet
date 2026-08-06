@@ -9,7 +9,7 @@ import { activeFleet, currentState, dagPreview, ensureCanvas, killFleet, prepare
 import { openInBrowser, listFleetRoots } from "./canvas.js";
 import { editConfig, editNode, type ConfigEditKey, type NodeEditKey } from "./edits.js";
 import { ensureFleetGitignore, fleetRootFor, isInsideGitRepo, writePlanFiles, writeWorkerPrompts } from "./fleet-store.js";
-import { resolveModelReference, validateFleetModels } from "./model-resolution.js";
+import { listModelRefs, resolveModelReference, validateFleetModels } from "./model-resolution.js";
 import { runFleetDesign, slugifyFleetName } from "./planner.js";
 import { writeReport } from "./report.js";
 import { initFleetState, resetForRelaunch, writeState } from "./state.js";
@@ -67,7 +67,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
     name: "fleet_plan",
     label: "Fleet Plan",
     description:
-      "Validate a fleet DAG definition, create its fleet root, and return an ASCII preview. Does NOT launch. PREREQUISITE: if the user's request is prose requirements or a goal rather than an explicit fleet definition, you MUST call fleet_design first and pass its drafted definition here — do not hand-write the fleet JSON yourself. Present the preview to the user; call fleet_launch only after they explicitly confirm. Choose models by task difficulty: cheap/fast models for trivial writers and validators, mid-tier coding models for code-run workers, strongest reasoning models for reviewers and synthesizers. When several models fit a tier, vary providers across nodes instead of defaulting to one family. Set worker.model per node to override config.model. All model refs are validated against the live registry — planning fails if any model is unavailable.",
+      "Validate a fleet DAG definition, create its fleet root, and return an ASCII preview. Does NOT launch. PREREQUISITE: if the user's request is prose requirements or a goal rather than an explicit fleet definition, you MUST call fleet_design first and pass its drafted definition here — do not hand-write the fleet JSON yourself. Present the preview to the user; call fleet_launch only after they explicitly confirm. Choose models by task difficulty: cheap/fast models for trivial writers and validators, mid-tier coding models for code-run workers, strongest reasoning models for reviewers and synthesizers. When several models fit a tier, vary providers across nodes instead of defaulting to one family. Set worker.model per node to override config.model. All model refs are validated against the live registry — planning fails if any model is unavailable. Call fleet_models first if you do not know exact provider/model IDs.",
     promptSnippet: "Plan a DAG-of-agents fleet from a fleet definition without launching it.",
     parameters: Type.Object({
       fleet: FleetSchema,
@@ -125,6 +125,17 @@ export function registerFleetTools(pi: ExtensionAPI): void {
       await writeWorkerPrompts(fleet);
       void startLoop(fleet, ctx, false);
       return textResult("fleet launched");
+    },
+  });
+
+  pi.registerTool({
+    name: "fleet_models",
+    label: "Fleet Models",
+    description: "List available model refs (provider/id) from the live registry. Call this before fleet_plan if you do not know exact provider/model IDs.",
+    promptSnippet: "List available fleet model refs.",
+    parameters: Type.Object({}),
+    async execute(_id, _params, _signal, _onUpdate, ctx) {
+      return textResult(`available models:\n${listModelRefs(ctx.modelRegistry).join("\n")}`);
     },
   });
 
