@@ -1,7 +1,8 @@
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ActiveFleet } from "./controller.js";
 import { validateFleetSpec } from "./dag.js";
+import { persistFleetJson } from "./fleet-store.js";
 import { resolveModelReference, type ModelRegistryLike } from "./model-resolution.js";
 import { buildWorkerPrompt } from "./prompts.js";
 import { writeState } from "./state.js";
@@ -10,13 +11,6 @@ export interface InsertResult {
   ok: boolean;
   message: string;
   inserted?: string[];
-}
-
-async function persistFleetJson(fleet: ActiveFleet): Promise<void> {
-  const path = join(fleet.fleetRoot, "fleet.json");
-  const tmp = join(fleet.fleetRoot, `.fleet.json.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`);
-  await writeFile(tmp, `${JSON.stringify(fleet.spec, null, 2)}\n`, "utf-8");
-  await rename(tmp, path);
 }
 
 async function insertWorkersSerialized(

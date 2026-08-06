@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { buildWorkerPrompt } from "./prompts.js";
 import { writeState } from "./state.js";
@@ -45,6 +45,13 @@ export async function writePlanFiles(fleetRoot: string, spec: FleetSpec, state: 
   await Promise.all(spec.workers.map((w) => mkdir(join(fleetRoot, "workers", w.id, "output"), { recursive: true })));
   await writeFile(join(fleetRoot, "fleet.json"), `${JSON.stringify(spec, null, 2)}\n`, "utf-8");
   await writeState(fleetRoot, state);
+}
+
+export async function persistFleetJson(fleet: { fleetRoot: string; spec: FleetSpec }): Promise<void> {
+  const path = join(fleet.fleetRoot, "fleet.json");
+  const tmp = join(fleet.fleetRoot, `.fleet.json.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`);
+  await writeFile(tmp, `${JSON.stringify(fleet.spec, null, 2)}\n`, "utf-8");
+  await rename(tmp, path);
 }
 
 export async function writeWorkerPrompts(fleet: { spec: FleetSpec; state: FleetState; fleetRoot: string }): Promise<void> {

@@ -17,6 +17,7 @@ export async function createWorktree(opts: CreateWorktreeOpts): Promise<string> 
   const branch = `fleet/${opts.fleetName}/${opts.nodeId}`;
   await mkdir(path, { recursive: true });
   await removeWorktree(path, opts.baseRepo);
+  await removeBranch(opts.baseRepo, branch);
   await execFileP("git", ["worktree", "add", "-b", branch, path], { cwd: opts.baseRepo });
   return path;
 }
@@ -55,6 +56,7 @@ export async function prepareIntegratorWorktree(
 ): Promise<{ path: string; ok: boolean; conflict?: string }> {
   const path = join(opts.fleetRoot, "worktrees", "fleet-integrator");
   await removeWorktree(path, opts.baseRepo);
+  await removeBranch(opts.baseRepo, `fleet/${opts.fleetName}/fleet-integrator`);
   await mkdir(path, { recursive: true });
   await execFileP("git", ["worktree", "add", "-b", `fleet/${opts.fleetName}/fleet-integrator`, path], {
     cwd: opts.baseRepo,
@@ -72,4 +74,8 @@ export async function prepareIntegratorWorktree(
 
 export async function removeWorktree(path: string, baseRepo: string): Promise<void> {
   await execFileP("git", ["worktree", "remove", "--force", path], { cwd: baseRepo }).catch(() => {});
+}
+
+export async function removeBranch(baseRepo: string, branch: string): Promise<void> {
+  await execFileP("git", ["branch", "-D", branch], { cwd: baseRepo }).catch(() => {});
 }
