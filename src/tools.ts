@@ -1,4 +1,3 @@
-import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -8,7 +7,7 @@ import { loadPreferences, mergeFleetConfig } from "./preferences.js";
 import { activeFleet, currentState, dagPreview, ensureCanvas, killFleet, prepareRelaunch, startLoop, statusText, stopCanvas, updateWidget } from "./controller.js";
 import { openInBrowser, listFleetRoots } from "./canvas.js";
 import { editConfig, editNode, type ConfigEditKey, type NodeEditKey } from "./edits.js";
-import { ensureFleetGitignore, fleetRootFor, isInsideGitRepo, writePlanFiles, writeWorkerPrompts } from "./fleet-store.js";
+import { ensureFleetGitignore, fleetRootFor, isInsideGitRepo, persistFleetJson, writePlanFiles, writeWorkerPrompts } from "./fleet-store.js";
 import { recoverLatestFleet } from "./fleet-recovery.js";
 import { listModelRefs, resolveModelReference, validateFleetModels } from "./model-resolution.js";
 import { runFleetDesign, slugifyFleetName } from "./planner.js";
@@ -233,7 +232,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
         if (!resolved.ok) return textResult(resolved.error);
         const canonical = `${resolved.model.provider}/${resolved.model.id}`;
         fleet.spec.workers = fleet.spec.workers.map((w) => w.id === params.node_id ? { ...w, model: canonical } : w);
-        await writeFile(join(fleet.fleetRoot, "fleet.json"), `${JSON.stringify(fleet.spec, null, 2)}\n`, "utf-8");
+        await persistFleetJson(fleet);
       }
       fleet.state = resetForRelaunch(fleet.state, fleet.spec, params.node_id);
       await writeState(fleet.fleetRoot, fleet.state);

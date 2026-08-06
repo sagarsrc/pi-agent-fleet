@@ -1,7 +1,6 @@
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { activeFleet, currentState, ensureCanvas, killFleet, prepareRelaunch, startLoop, stopCanvas, updateWidget } from "./controller.js";
+import { persistFleetJson } from "./fleet-store.js";
 import { openInBrowser, listFleetRoots } from "./canvas.js";
 import { insertWorkers } from "./insert.js";
 import { editConfig, editNode, type ConfigEditKey, type NodeEditKey } from "./edits.js";
@@ -185,7 +184,7 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
           }
           const canonical = `${resolved.model.provider}/${resolved.model.id}`;
           active.spec.workers = active.spec.workers.map((w) => w.id === target ? { ...w, model: canonical } : w);
-          await writeFile(join(active.fleetRoot, "fleet.json"), `${JSON.stringify(active.spec, null, 2)}\n`, "utf-8");
+          await persistFleetJson(active);
         }
         active.state = resetForRelaunch(active.state, active.spec, target);
         await writeState(active.fleetRoot, active.state);
