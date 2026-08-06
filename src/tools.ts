@@ -9,6 +9,7 @@ import { activeFleet, currentState, dagPreview, ensureCanvas, killFleet, prepare
 import { openInBrowser, listFleetRoots } from "./canvas.js";
 import { editConfig, editNode, type ConfigEditKey, type NodeEditKey } from "./edits.js";
 import { ensureFleetGitignore, fleetRootFor, isInsideGitRepo, writePlanFiles, writeWorkerPrompts } from "./fleet-store.js";
+import { recoverLatestFleet } from "./fleet-recovery.js";
 import { listModelRefs, resolveModelReference, validateFleetModels } from "./model-resolution.js";
 import { runFleetDesign, slugifyFleetName } from "./planner.js";
 import { writeReport } from "./report.js";
@@ -145,8 +146,9 @@ export function registerFleetTools(pi: ExtensionAPI): void {
     description: "Show the current active fleet DAG and live widget lines.",
     promptSnippet: "Show current active fleet status.",
     parameters: Type.Object({}),
-    async execute() {
-      const active = activeFleet.current;
+    async execute(_id, _params, _signal, _onUpdate, ctx) {
+      const active = activeFleet.current ?? await recoverLatestFleet(ctx.cwd);
+      if (active) activeFleet.current ??= active;
       if (!active) return textResult("no fleet planned yet");
       return textResult(await statusText(active));
     },
@@ -158,8 +160,8 @@ export function registerFleetTools(pi: ExtensionAPI): void {
     description: "Request a fleet-wide kill (target \"all\") or kill a single node by worker id. Killing a running node aborts its session; killing a pending node marks it killed at the next dispatch pass. Killed nodes can be revived with fleet_relaunch.",
     promptSnippet: "Kill the whole fleet or a single node by worker id.",
     parameters: Type.Object({ target: Type.String({ description: "all or a worker id" }) }),
-    async execute(_id, params) {
-      return textResult(await killFleet(params.target));
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      return textResult(await killFleet(params.target, ctx.cwd));
     },
   });
 
@@ -300,7 +302,8 @@ export function registerFleetTools(pi: ExtensionAPI): void {
     promptSnippet: "Regenerate the active fleet report.",
     parameters: Type.Object({}),
     async execute(_id, _params, _signal, _onUpdate, ctx) {
-      const active = activeFleet.current;
+      const active = activeFleet.current ?? await recoverLatestFleet(ctx.cwd);
+      if (active) activeFleet.current ??= active;
       if (!active) return textResult("no fleet planned yet");
       const state = await currentState(active);
       const report = await writeReport({ spec: active.spec, state, fleetRoot: active.fleetRoot, repoCwd: ctx.cwd });

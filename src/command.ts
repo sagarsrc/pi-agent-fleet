@@ -7,6 +7,7 @@ import { insertWorkers } from "./insert.js";
 import { editConfig, editNode, type ConfigEditKey, type NodeEditKey } from "./edits.js";
 import { listModelRefs, resolveModelReference } from "./model-resolution.js";
 import { clearPreference, loadPreferences, PREFERENCE_KEYS, savePreferences, setPreference } from "./preferences.js";
+import { recoverLatestFleet } from "./fleet-recovery.js";
 import { resetForRelaunch, writeState } from "./state.js";
 import { buildWidgetLines } from "./ui.js";
 import { renderDag } from "./viz.js";
@@ -95,7 +96,8 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
         ctx.ui.notify(`available models:\n${listModelRefs(ctx.modelRegistry).join("\n")}`, "info");
         return;
       }
-      const active = activeFleet.current;
+      const active = activeFleet.current ?? await recoverLatestFleet(ctx.cwd);
+      if (active) activeFleet.current ??= active;
       if (!active) {
         ctx.ui.notify("no fleet planned yet", "warning");
         return;
@@ -114,7 +116,7 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
         return;
       }
       if (cmd === "kill") {
-        const text = await killFleet(target ?? "");
+        const text = await killFleet(target ?? "", ctx.cwd);
         const severity = text.includes("kill") && !text.startsWith("unknown") && !text.includes("already") ? "warning" : "error";
         ctx.ui.notify(text, severity);
         return;
