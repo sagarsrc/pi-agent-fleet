@@ -86,7 +86,7 @@ export async function writeReport(opts: {
   for (const w of spec.workers) {
     const n = state.nodes[w.id];
     for (const out of n?.produced_outputs ?? []) {
-      if (!out.startsWith("output/") || !out.endsWith(".json")) continue;
+      if (!out.startsWith("output/") || !out.endsWith(".json") || out.includes("..")) continue;
       anyJson = true;
       let content: string;
       try {

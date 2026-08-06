@@ -51,6 +51,16 @@ describe("writeReport next actions + json outputs", () => {
     expect(md).toContain('"values"');
   });
 
+  it("skips produced output paths containing ..", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fleet-report-next-"));
+    let state = initFleetState(spec);
+    state = { ...state, status: "completed" };
+    state = patchNode(root, state, "a", { status: "completed", produced_outputs: ["output/../../secret.json", "output/numbers.json"] });
+    const md = await writeReport({ spec, state, fleetRoot: root, repoCwd: "/nonexistent" });
+    expect(md).toContain("## JSON outputs");
+    expect(md).not.toContain("### a: output/..");
+  });
+
   it("truncates JSON outputs larger than 4096 bytes", async () => {
     const root = await mkdtemp(join(tmpdir(), "fleet-report-next-"));
     await mkdir(join(root, "workers", "a", "output"), { recursive: true });

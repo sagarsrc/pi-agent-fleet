@@ -290,6 +290,14 @@ export async function killFleet(target: string, cwd?: string): Promise<string> {
     return `node "${target}" kill requested`;
   }
   if (!active.running) {
+    try {
+      active.state = await readState(active.fleetRoot);
+    } catch {
+      // keep in-memory state
+    }
+    if (active.state.status === "running") {
+      return `node "${target}" not killed: fleet state on disk is "running" — it appears to be running in another live session; kill it there (this session holds no live scheduler, so a kill here would silently no-op)`;
+    }
     active.state = patchNode(active.fleetRoot, active.state, target, { status: "killed", ended_at: new Date().toISOString() });
     await writeState(active.fleetRoot, active.state);
     return `node "${target}" killed`;
