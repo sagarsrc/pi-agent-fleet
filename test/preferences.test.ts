@@ -10,6 +10,7 @@ import {
   setPreference,
   validatePreferenceValue,
 } from "../src/preferences.js";
+import { fakeModel, registryFor } from "./fakes.js";
 
 async function tmpPath(): Promise<string> {
   return join(await mkdtemp(join(tmpdir(), "fleet-prefs-")), "fleet.json");
@@ -87,6 +88,20 @@ describe("validatePreferenceValue", () => {
     expect(validatePreferenceValue("effort", "maxed").ok).toBe(false);
     expect(validatePreferenceValue("model", "  ").ok).toBe(false);
     expect(validatePreferenceValue("nope", "1").ok).toBe(false);
+  });
+});
+
+describe("setPreference with registry", () => {
+  it("rejects unknown model preference with registry suggestions", () => {
+    const r = setPreference({}, "model", "kimi-for-coding/k2.7", registryFor([fakeModel("kimi-coding", "kimi-for-coding")]));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain("kimi-coding/kimi-for-coding");
+  });
+
+  it("stores canonical model preference", () => {
+    const r = setPreference({}, "model", "kimi-for-coding", registryFor([fakeModel("kimi-coding", "kimi-for-coding")]));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.prefs.model).toBe("kimi-coding/kimi-for-coding");
   });
 });
 

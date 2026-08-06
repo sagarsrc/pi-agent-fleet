@@ -32,7 +32,7 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
             return;
           }
           const prefs = await loadPreferences();
-          const r = setPreference(prefs, key, value);
+          const r = setPreference(prefs, key, value, ctx.modelRegistry);
           if (!r.ok) {
             ctx.ui.notify(r.error, "error");
             return;
@@ -50,15 +50,19 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
           const key = field.split(":")[0] as (typeof PREFERENCE_KEYS)[number];
           const input = await ctx.ui.input(`${key} (current: ${prefs[key] ?? "—"}):`, "empty clears");
           if (input === undefined) break;
+          let err: string | undefined;
           const next = input.trim().length === 0
             ? clearPreference(prefs, key)
             : (() => {
-                const r = setPreference(prefs, key, input.trim());
-                if (!r.ok) return undefined;
+                const r = setPreference(prefs, key, input.trim(), ctx.modelRegistry);
+                if (!r.ok) {
+                  err = r.error;
+                  return undefined;
+                }
                 return r.prefs;
               })();
           if (next === undefined) {
-            ctx.ui.notify(`invalid value for ${key}`, "error");
+            ctx.ui.notify(err ?? `invalid value for ${key}`, "error");
             continue;
           }
           await savePreferences(next);
