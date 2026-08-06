@@ -28,6 +28,10 @@ export function registerFleetTools(pi: ExtensionAPI): void {
       Type.Literal("verdict"), Type.Literal("json"), Type.Literal("yaml"),
     ]),
     required: Type.Optional(Type.Boolean()),
+    schema: Type.Optional(Type.Object({
+      required_keys: Type.Optional(Type.Array(Type.String(), { description: "JSON object keys that must be present" })),
+      number_keys: Type.Optional(Type.Array(Type.String(), { description: "JSON object keys that must be numbers or arrays of numbers" })),
+    }, { description: "Optional JSON object shape; only valid with kind json" })),
   });
   const EffortSchema = Type.Union([
     Type.Literal("off"), Type.Literal("minimal"), Type.Literal("low"),

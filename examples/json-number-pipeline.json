@@ -1,0 +1,35 @@
+{
+  "fleet_name": "json-number-pipeline",
+  "type": "dag",
+  "config": { "max_concurrent": 2 },
+  "workers": [
+    {
+      "id": "write-numbers",
+      "type": "write",
+      "task": "Write output/numbers.json containing exactly {\"values\":[3,5,8]}. No markdown. No commentary.",
+      "depends_on": [],
+      "outputs": [{ "path": "output/numbers.json", "kind": "json", "required": true, "schema": { "required_keys": ["values"], "number_keys": ["values"] } }]
+    },
+    {
+      "id": "add-numbers",
+      "type": "write",
+      "task": "Read output/numbers.json from write-numbers. Write output/sum.json containing {\"operation\":\"add\",\"result\":16}.",
+      "depends_on": ["write-numbers"],
+      "outputs": [{ "path": "output/sum.json", "kind": "json", "required": true, "schema": { "required_keys": ["operation", "result"], "number_keys": ["result"] } }]
+    },
+    {
+      "id": "subtract-numbers",
+      "type": "write",
+      "task": "Read output/numbers.json from write-numbers. Write output/difference.json containing {\"operation\":\"subtract\",\"result\":-10} using first value minus the rest.",
+      "depends_on": ["write-numbers"],
+      "outputs": [{ "path": "output/difference.json", "kind": "json", "required": true, "schema": { "required_keys": ["operation", "result"], "number_keys": ["result"] } }]
+    },
+    {
+      "id": "synthesize",
+      "type": "write",
+      "task": "Read output/sum.json and output/difference.json. Write output/final.json containing {\"sum\":16,\"difference\":-10,\"combined\":6} where combined = sum + difference.",
+      "depends_on": ["add-numbers", "subtract-numbers"],
+      "outputs": [{ "path": "output/final.json", "kind": "json", "required": true, "schema": { "required_keys": ["sum", "difference", "combined"], "number_keys": ["sum", "difference", "combined"] } }]
+    }
+  ]
+}

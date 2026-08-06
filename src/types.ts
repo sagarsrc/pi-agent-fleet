@@ -1,9 +1,15 @@
 export type OutputKind = "markdown" | "file-exists" | "verdict" | "json" | "yaml";
 
+export interface JsonOutputSchema {
+  required_keys?: string[];
+  number_keys?: string[];
+}
+
 export interface ContractOutput {
   path: string;
   kind: OutputKind;
   required: boolean;
+  schema?: JsonOutputSchema;
 }
 
 export type WorkerType = "research" | "code-run" | "reviewer" | "write" | "read-only";
