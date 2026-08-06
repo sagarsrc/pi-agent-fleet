@@ -23,6 +23,9 @@ Precise vocabulary for this project. Use these terms exactly — in code, commit
 | **fleet-of-one** | single-node fleet. Same machinery, no special case |
 | **worker-mode** | extension loaded into a worker session, scoped by node id; exposes `fleet_dag_read` + `fleet_node_update` |
 | **orchestrator** | the main pi session that plans/launches/monitors the fleet |
+| **JSON contract schema** | optional `schema` on a `json` output: `required_keys` (must exist) + `number_keys` (must be number or number[]); prompt-injected and verified at contract check |
+
+Rule: JSON producer/consumer contracts must name exact keys — the producer's `schema.required_keys` must cover every key a downstream consumer reads.
 
 ## Reserved for v2 (defined now, unimplemented)
 

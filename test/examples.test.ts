@@ -14,4 +14,10 @@ describe("examples", () => {
       expect(r.layers).toEqual([["write-numbers"], ["add-numbers", "subtract-numbers"], ["synthesize"]]);
     }
   });
+
+  it("README documents json number pipeline and fleet_models", async () => {
+    const readme = await readFile("README.md", "utf-8");
+    expect(readme).toContain("examples/json-number-pipeline.json");
+    expect(readme).toContain("fleet_models");
+  });
 });

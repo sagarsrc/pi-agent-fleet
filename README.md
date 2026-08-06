@@ -44,6 +44,12 @@ Ask your pi session (the LLM drives the tools):
 
 The agent calls `fleet_design` (if you describe it in prose) or `fleet_plan` (if you already have JSON), you confirm the preview, then `fleet_launch` runs it. Watch the live widget or open the browser canvas; read the report at `.fleet/<name>-<ts>/report.md`.
 
+JSON pipeline variant — a numeric handoff chain where workers pass typed JSON, verified by schemas at contract check:
+
+> Plan and launch the fleet defined in `examples/json-number-pipeline.json`.
+
+One writer emits `{"values":[3,5,8]}`, two parallel consumers add and subtract, a synthesizer combines the results — each output declared as a `json` contract with a `schema` naming its required and numeric keys.
+
 ## Writing a fleet
 
 ```json
@@ -112,8 +118,15 @@ Every worker declares `outputs[]` with kinds, verified in code at worker exit be
 | `markdown` | exists, non-empty, starts with `#` |
 | `file-exists` | exists, non-empty (repo-relative paths = code edits) |
 | `verdict` | `verdict: lgtm\|iterate\|escalate` line + non-empty body |
-| `json` | parses as JSON |
+| `json` | parses as JSON; optional `schema` checks (below) |
 | `yaml` | parses as YAML |
+
+JSON outputs may declare a `schema` with `required_keys` (keys that must exist) and `number_keys` (keys that must be numbers or arrays of numbers). Schemas are only allowed on `kind: "json"` outputs, are injected into the worker's prompt, and are enforced at contract check:
+
+```json
+{ "path": "output/sum.json", "kind": "json", "required": true,
+  "schema": { "required_keys": ["operation", "result"], "number_keys": ["result"] } }
+```
 
 Failed required contract → `contract_failed`, dependents blocked, orchestrator notified. No silent passes.
 
@@ -123,6 +136,7 @@ Failed required contract → `contract_failed`, dependents blocked, orchestrator
 |---|---|
 | `fleet_design` | draft a fleet DAG from plain-language requirements (planner agent → validated JSON + preview) |
 | `fleet_plan` | validate + preview a fleet definition (no launch) |
+| `fleet_models` | list available model refs (provider/id) from the live registry — call before `fleet_plan` if you don't know exact model IDs |
 | `fleet_launch` | launch the planned fleet after user confirmation; `skip_confirm` for unattended runs |
 | `fleet_status` | live DAG status and widget lines |
 | `fleet_pause` / `fleet_resume` | pause/resume loop fleets at the next iteration boundary |
