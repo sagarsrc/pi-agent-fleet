@@ -5,6 +5,8 @@ dist-demo/
 .superpowers/
 .worktrees/
 docs/screenshots/
+docs/superpowers/
+.archive/
 .DS_Store
 .impeccable/
 .claude/

@@ -190,7 +190,7 @@ npm test          # 274 tests, zero-API (fake session factory)
 npm run typecheck
 ```
 
-Design docs live in `docs/superpowers/specs/`; experiment history in `docs/experiments/`.
+Design docs are archived locally under `.archive/docs/superpowers/` (not tracked); experiment history in `docs/experiments/`.
 
 ## License
 

@@ -44,5 +44,5 @@ graph TD
 - Optional follow-ups from ledger: recovered `fleet_relaunch/edit/add_node` still need active in-memory fleet; ownership handoff is direct-dep only; `writePlanFiles` initial `fleet.json` write is still non-atomic pre-launch.
 - Reusable commands:
   - Verify: `npm test && npm run typecheck`
-  - Demo canvas: `npx tsx scripts/serve-demo.ts` then open `http://127.0.0.1:52000/?demo=1`
+  - Demo canvas: `npx tsx .archive/scripts/serve-demo.ts` then open `http://127.0.0.1:52000/?demo=1` (local archive only, not tracked)
   - JSON pipeline example: `examples/json-number-pipeline.json`
