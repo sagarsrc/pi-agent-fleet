@@ -479,31 +479,129 @@ export interface SessionEntryView {
   text: string;
 }
 
-export function parseSessionTail(jsonl: string, maxEntries: number): SessionEntryView[] {
-  const out: SessionEntryView[] = [];
-  for (const line of jsonl.split("\n")) {
-    if (!line.includes('"type":"message"')) continue;
-    try {
-      const e = JSON.parse(line) as { message?: { role?: unknown; content?: unknown } };
-      const msg = e.message;
-      if (!msg || typeof msg.role !== "string" || !Array.isArray(msg.content)) continue;
-      const parts: string[] = [];
-      for (const p of msg.content as Array<{ type?: string; text?: string; name?: string }>) {
-        if (p?.type === "text" && typeof p.text === "string") parts.push(p.text);
-        else if ((p?.type === "toolCall" || p?.type === "tool_call") && typeof p.name === "string") parts.push(`[tool: ${p.name}]`);
-        else if (p?.type === "toolResult" || p?.type === "tool_result") parts.push("[tool result]");
-      }
-      const text = parts.join("\n").trim();
-      if (text.length > 0) {
-        out.push({ role: msg.role as string, text: text.length > 4000 ? `${text.slice(0, 4000)}…` : text });
-      }
-    } catch {
-      // skip unparseable line
-    }
-  }
-  return out.slice(-maxEntries);
+export interface ActionView {
+  type: "tool_call" | "tool_result" | "model_change" | "thinking_level_change" | "complete";
+  name?: string;
+  toolName?: string;
+  arguments?: Record<string, unknown>;
+  provider?: string;
+  modelId?: string;
+  thinkingLevel?: string;
+  stopReason?: string;
+  isError?: boolean;
+  timestamp?: string;
 }
 
+export type TimelineEvent =
+  | { type: "message"; role: string; text: string; timestamp?: string }
+  | { type: "tool_call"; name: string; arguments?: Record<string, unknown>; timestamp?: string }
+  | { type: "tool_result"; toolName?: string; isError?: boolean; text?: string; timestamp?: string }
+  | { type: "model_change"; provider: string; modelId: string; timestamp?: string }
+  | { type: "thinking_level_change"; thinkingLevel: string; timestamp?: string }
+  | { type: "complete"; stopReason: string; timestamp?: string };
+
+export interface SessionTailView {
+  entries: SessionEntryView[];
+  actions: ActionView[];
+  events: TimelineEvent[];
+}
+
+export function parseSessionTail(jsonl: string, maxEntries: number): SessionTailView {
+  const events: TimelineEvent[] = [];
+  const entries: SessionEntryView[] = [];
+  const actions: ActionView[] = [];
+  for (const raw of jsonl.split("\n")) {
+    if (!raw.trim()) continue;
+    let e: { type?: string; timestamp?: string; message?: { role?: unknown; content?: unknown; stopReason?: string; toolName?: string; isError?: boolean }; provider?: string; modelId?: string; thinkingLevel?: string } | undefined;
+    try { e = JSON.parse(raw); } catch { continue; }
+    if (!e) continue;
+    const ts = typeof e.timestamp === "string" ? e.timestamp : undefined;
+    if (e.type === "model_change" && typeof e.provider === "string" && typeof e.modelId === "string") {
+      const a: ActionView = { type: "model_change", provider: e.provider, modelId: e.modelId, timestamp: ts };
+      actions.push(a);
+      events.push({ type: "model_change", provider: e.provider, modelId: e.modelId, timestamp: ts });
+      continue;
+    }
+    if (e.type === "thinking_level_change" && typeof e.thinkingLevel === "string") {
+      const a: ActionView = { type: "thinking_level_change", thinkingLevel: e.thinkingLevel, timestamp: ts };
+      actions.push(a);
+      events.push({ type: "thinking_level_change", thinkingLevel: e.thinkingLevel, timestamp: ts });
+      continue;
+    }
+    if (e.type !== "message") continue;
+    const msg = e.message;
+    if (!msg || typeof msg.role !== "string" || !Array.isArray(msg.content)) continue;
+    // tool result messages carry the result at the message level
+    if (msg.role === "toolResult" || msg.role === "tool_result") {
+      const a: ActionView = { type: "tool_result", toolName: typeof msg.toolName === "string" ? msg.toolName : undefined, isError: msg.isError, timestamp: ts };
+      actions.push(a);
+      events.push({ type: "tool_result", toolName: a.toolName, isError: a.isError, timestamp: ts });
+    }
+    const parts: string[] = [];
+    for (const p of msg.content as Array<{ type?: string; text?: string; name?: string; toolName?: string; isError?: boolean; arguments?: Record<string, unknown> }>) {
+      if (!p) continue;
+      if (p.type === "text" && typeof p.text === "string") parts.push(p.text);
+      else if ((p.type === "toolCall" || p.type === "tool_call") && typeof p.name === "string") {
+        parts.push(`[tool: ${p.name}]`);
+        const a: ActionView = { type: "tool_call", name: p.name, arguments: p.arguments, timestamp: ts };
+        actions.push(a);
+        events.push({ type: "tool_call", name: p.name, arguments: p.arguments, timestamp: ts });
+      } else if (p.type === "toolResult" || p.type === "tool_result") {
+        parts.push("[tool result]");
+        const a: ActionView = { type: "tool_result", toolName: typeof p.toolName === "string" ? p.toolName : p.name, isError: p.isError, timestamp: ts };
+        actions.push(a);
+        events.push({ type: "tool_result", toolName: a.toolName, isError: a.isError, timestamp: ts });
+      }
+    }
+    if (msg.stopReason && typeof msg.stopReason === "string" && msg.stopReason !== "toolUse" && msg.stopReason !== "tool_use") {
+      const a: ActionView = { type: "complete", stopReason: msg.stopReason, timestamp: ts };
+      actions.push(a);
+      events.push({ type: "complete", stopReason: msg.stopReason, timestamp: ts });
+    }
+    const text = parts.join("\n").trim();
+    if (text.length > 0) {
+      const entry: SessionEntryView = { role: msg.role as string, text: text.length > 4000 ? `${text.slice(0, 4000)}…` : text };
+      entries.push(entry);
+      events.push({ type: "message", role: entry.role, text: entry.text, timestamp: ts });
+    }
+  }
+  return { entries: entries.slice(-maxEntries), actions: actions.slice(-maxEntries), events: events.slice(-maxEntries) };
+}
+
+const DEMO_TASK = `You are L1 (lay-of-the-land) researcher in a 2-layer research fleet.\n\nMission context: founder built QuickCall — a daemon watching engineers' AI coding-agent sessions (Claude Code, Cursor, Codex), extracting team conventions, capturing accept/reject signals and human corrections on agent output.\n\nYour job:\n1. Read the mission brief and upstream inputs.\n2. Search for relevant precedents, code patterns, and competitive landscape.\n3. Write a concise markdown report to the required output path.\n4. Save ALL output files to the worker output directory using absolute paths.\n\nSave the report to output/l1-methods.md. The file must use markdown headings and keep each section focused. Do not modify source code.`;
+
+export function buildDemoSession(_id: string, task?: string): SessionTailView & { task: string } {
+  const taskText = task || DEMO_TASK;
+  const baseTs = "2026-08-01T09:57:";
+  const events: TimelineEvent[] = [
+    { type: "model_change", provider: "openai-codex", modelId: "gpt-5.4-mini", timestamp: baseTs + "04.987Z" },
+    { type: "thinking_level_change", thinkingLevel: "high", timestamp: baseTs + "04.987Z" },
+    { type: "message", role: "assistant", text: "I'll review the scheduler changes and write the verdict.", timestamp: baseTs + "05.000Z" },
+    { type: "tool_call", name: "read", arguments: { path: "docs/superpowers/specs/reviewer-contract.md" }, timestamp: baseTs + "06.000Z" },
+    { type: "tool_call", name: "read", arguments: { path: "src/scheduler.ts" }, timestamp: baseTs + "06.500Z" },
+    { type: "message", role: "assistant", text: "The scheduler uses a priority queue. I'll run the test suite to verify behavior.", timestamp: baseTs + "08.000Z" },
+    { type: "tool_call", name: "bash", arguments: { command: "npm run typecheck" }, timestamp: baseTs + "09.000Z" },
+    { type: "tool_result", toolName: "bash", isError: false, text: "✓ typecheck passed", timestamp: baseTs + "12.000Z" },
+    { type: "message", role: "assistant", text: "Typecheck passes. I'll search for fleet reviewer patterns and inspect tests.", timestamp: baseTs + "12.500Z" },
+    { type: "tool_call", name: "web_search", arguments: { queries: ["fleet reviewer DAG pattern"] }, timestamp: baseTs + "13.000Z" },
+    { type: "tool_call", name: "read", arguments: { path: "test/scheduler.test.ts" }, timestamp: baseTs + "15.000Z" },
+    { type: "tool_result", toolName: "read", isError: false, text: "# 123", timestamp: baseTs + "15.500Z" },
+    { type: "message", role: "assistant", text: "Upstream outputs look good. Tests pass and search results confirm the pattern. Writing the review verdict now.", timestamp: baseTs + "17.000Z" },
+    { type: "tool_call", name: "write", arguments: { path: "output/review.md" }, timestamp: baseTs + "18.000Z" },
+    { type: "tool_result", toolName: "write", isError: false, text: "Successfully wrote 45 bytes to output/review.md", timestamp: baseTs + "18.500Z" },
+    { type: "message", role: "assistant", text: "Done.", timestamp: baseTs + "19.000Z" },
+    { type: "complete", stopReason: "complete", timestamp: baseTs + "20.000Z" },
+  ];
+  const entries: SessionEntryView[] = events.filter((e) => e.type === "message").map((e) => ({ role: (e as TimelineEvent & { type: "message" }).role, text: (e as TimelineEvent & { type: "message" }).text }));
+  const actions: ActionView[] = events.filter((e) => e.type !== "message").map((e) => {
+    if (e.type === "tool_call") return { type: e.type, name: e.name, arguments: e.arguments, timestamp: e.timestamp };
+    if (e.type === "tool_result") return { type: e.type, toolName: e.toolName, isError: e.isError, timestamp: e.timestamp };
+    if (e.type === "model_change") return { type: e.type, provider: e.provider, modelId: e.modelId, timestamp: e.timestamp };
+    if (e.type === "thinking_level_change") return { type: e.type, thinkingLevel: e.thinkingLevel, timestamp: e.timestamp };
+    return { type: e.type, stopReason: e.stopReason, timestamp: e.timestamp };
+  }) as ActionView[];
+  return { entries, actions, events, task: taskText };
+}
 async function latestSessionFile(workerDir: string): Promise<string | undefined> {
   try {
     const files = (await readdir(workerDir)).filter((f) => f.endsWith(".jsonl")).sort();
@@ -626,14 +724,49 @@ main { display:flex; flex:1 1 auto; min-height:0; }
 .flags { margin-top:6px; font-size:11px; color:var(--warn); }
 .flags span { cursor:help; }
 .note { margin-top:6px; font-size:13px; color:var(--warn); }
-#side { width:420px; flex:0 0 auto; border-left:1px solid var(--line); overflow:auto; padding:12px; background:var(--bg); }
+#side { width:420px; flex:0 0 auto; border-left:1px solid var(--line); overflow:hidden; display:flex; flex-direction:column; background:var(--bg); }
 #side:focus, #side:focus-visible { outline:none; }
-.side-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
-.side-head .meta { color:var(--muted); }
+.side-head { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; flex-shrink:0; gap:6px; padding:12px 12px 8px; border-bottom:1px solid var(--line); background:var(--bg); }
+.side-head .side-meta { display:flex; gap:6px; width:100%; }
+.side-head .side-meta-chip { font-size:11px; color:var(--muted); border:1px solid var(--line); border-radius:4px; padding:2px 6px; white-space:nowrap; }
+.side-head .meta { color:var(--muted); font-size:12px; display:flex; align-items:center; gap:4px; }
+.side-head .side-hash { color:var(--muted); font-weight:400; }
+.side-head .side-id { font-weight:700; color:var(--hdr); font-size:15px; letter-spacing:-0.01em; }
+.side-body { flex:1; overflow:auto; padding:8px 12px 12px; }
 .taskbox-side { border:1px solid var(--line); border-radius:6px; padding:8px; margin-bottom:10px; white-space:pre-wrap; word-break:break-word; font-size:13px; }
 .msg { margin-bottom:10px; padding:8px; border-radius:6px; background:var(--panel); white-space:pre-wrap; word-break:break-word; }
 .msg .role { font-weight:700; margin-bottom:4px; }
 .role-user { color:var(--accent); } .role-assistant { color:var(--ok); } .role-tool { color:var(--warn); }
+.collapsible { position:sticky; top:8px; z-index:1; border:1px solid var(--line); border-radius:6px; margin-bottom:10px; background:var(--bg); }
+.collapsible-head { display:flex; align-items:center; gap:6px; width:100%; padding:8px; background:transparent; border:none; font:inherit; font-size:12px; color:var(--muted); cursor:pointer; text-align:left; }
+.collapsible-head:hover { background:var(--panel); }
+.collapsible-body { padding:8px; border-top:1px solid var(--line); white-space:pre-wrap; word-break:break-word; font-size:13px; max-height:260px; overflow:auto; }
+.collapsible.collapsed .collapsible-body { display:none; }
+.collapsible .chevron { display:inline-block; transition:transform .15s; }
+.collapsible.collapsed .chevron { transform:rotate(-90deg); }
+.timeline { margin-bottom:12px; }
+.timeline-action { background:var(--panel); border-radius:5px; margin-bottom:5px; }
+.timeline-action.open { background:var(--panel-2); }
+.timeline-action.action-error { border-left:3px solid var(--bad); background:color-mix(in srgb, var(--bad) 9%, var(--panel)); }
+.timeline-row { display:flex; align-items:center; gap:8px; padding:5px 8px; font-size:12px; }
+.timeline-row .action-icon { flex-shrink:0; width:34px; text-align:center; color:var(--accent); font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:0.02em; }
+.timeline-row .action-name { flex-shrink:0; font-weight:600; min-width:48px; font-size:12px; white-space:nowrap; }
+.timeline-row .action-detail { flex:1; min-width:0; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+.timeline-row .action-error { color:var(--bad); }
+.timeline-row .ts { flex-shrink:0; color:var(--wire); font-size:11px; font-variant-numeric:tabular-nums; }
+.timeline-msg { padding:8px; margin-bottom:6px; border-radius:5px; background:var(--panel); font-size:13px; }
+.timeline-msg.user { border-left:1px solid var(--accent); background:color-mix(in srgb, var(--accent) 5%, var(--panel)); }
+.timeline-msg.assistant { border-left:1px solid var(--ok); background:color-mix(in srgb, var(--ok) 5%, var(--panel)); }
+.timeline-msg .role { font-weight:700; margin-bottom:4px; }
+.timeline-msg .timeline-meta { display:flex; justify-content:space-between; align-items:center; margin-bottom:3px; }
+.timeline-msg .timeline-meta .ts { color:var(--wire); font-size:11px; }
+.timeline-msg .timeline-text { white-space:pre-wrap; word-break:break-word; }
+.timeline-loading { display:flex; align-items:center; justify-content:center; gap:8px; padding:16px 8px; color:var(--muted); font-size:13px; }
+.timeline-empty { padding:16px 8px; color:var(--muted); font-size:13px; text-align:center; }
+.activity-toggle { flex-shrink:0; width:18px; height:18px; padding:0; background:transparent; border:1px solid var(--line); border-radius:4px; color:var(--muted); cursor:pointer; font-size:11px; line-height:1; }
+.activity-toggle:hover { background:var(--bg); color:var(--fg); }
+.activity-body { padding:8px; border-top:1px solid var(--line); font-size:12px; color:var(--muted); font-family:var(--mono); white-space:pre-wrap; word-break:break-word; }
+.activity-body pre { margin:0; background:var(--bg); padding:8px; border-radius:4px; overflow:auto; font-size:11px; }
 .react-flow__minimap-node.st-completed { fill:var(--ok); }
 .react-flow__minimap-node.st-running { fill:var(--accent); }
 .react-flow__minimap-node.st-failed, .react-flow__minimap-node.st-contract_failed { fill:var(--bad); }
@@ -824,6 +957,14 @@ export async function startCanvasServer(opts: {
       }
       const m = url.pathname.match(/^\/api\/session\/([a-z0-9][a-z0-9-]*)$/);
       if (m) {
+        const isDemo = url.searchParams.get("demo") === "1";
+        let workerTask: string | undefined;
+        if (isDemo) {
+          const demo = buildDemoSession(m[1]);
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify(demo));
+          return;
+        }
         const f = await resolveFleet(url.searchParams.get("fleet"));
         if (!f || f === "unknown" || !f.spec.workers.some((w) => w.id === m[1])) {
           res.writeHead(404);
@@ -835,12 +976,14 @@ export async function startCanvasServer(opts: {
         const file = await latestSessionFile(join(f.fleetRoot, "workers", m[1]));
         res.writeHead(200, { "content-type": "application/json" });
         const worker = f.spec.workers.find((w) => w.id === m[1]);
+        workerTask = worker?.task;
         if (!file) {
-          res.end(JSON.stringify({ entries: [], task: worker?.task }));
+          res.end(JSON.stringify({ entries: [], actions: [], events: [], task: workerTask }));
           return;
         }
         const content = await readFile(file, "utf-8");
-        res.end(JSON.stringify({ entries: parseSessionTail(content, tail), task: worker?.task }));
+        const { entries, actions, events } = parseSessionTail(content, tail);
+        res.end(JSON.stringify({ entries, actions, events, task: workerTask }));
         return;
       }
       res.writeHead(404);

@@ -54,7 +54,26 @@ interface CanvasPayload {
 }
 interface FleetInfo { name: string; status: string }
 interface SessionEntry { role: string; text: string }
-interface SessionResp { entries: SessionEntry[]; task?: string }
+interface ActionView {
+  type: "tool_call" | "tool_result" | "model_change" | "thinking_level_change" | "complete";
+  name?: string;
+  toolName?: string;
+  arguments?: Record<string, unknown>;
+  provider?: string;
+  modelId?: string;
+  thinkingLevel?: string;
+  stopReason?: string;
+  isError?: boolean;
+  timestamp?: string;
+}
+type TimelineEvent =
+  | { type: "message"; role: string; text: string; timestamp?: string }
+  | { type: "tool_call"; name: string; arguments?: Record<string, unknown>; timestamp?: string }
+  | { type: "tool_result"; toolName?: string; isError?: boolean; text?: string; timestamp?: string }
+  | { type: "model_change"; provider: string; modelId: string; timestamp?: string }
+  | { type: "thinking_level_change"; thinkingLevel: string; timestamp?: string }
+  | { type: "complete"; stopReason: string; timestamp?: string };
+interface SessionResp { entries: SessionEntry[]; actions: ActionView[]; events: TimelineEvent[]; task?: string }
 
 /* ---------- helpers ---------- */
 const NODE_W = 284;
@@ -202,6 +221,134 @@ function FleetNode({ data }: NodeProps<Node<FleetNodeData>>) {
 const nodeTypes = { fleet: FleetNode };
 
 /* ---------- side panel ---------- */
+function CollapsiblePrompt({ title, text }: { title: string; text: string }) {
+  const [open, setOpen] = useState(true);
+  if (!text) return null;
+  return (
+    <div className={"collapsible" + (open ? "" : " collapsed")}>
+      <button className="collapsible-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <span className="chevron">{open ? "-" : "+"}</span>
+        <span>{title}</span>
+      </button>
+      <div className="collapsible-body">{text}</div>
+    </div>
+  );
+}
+
+function formatActionDetail(a: { arguments?: Record<string, unknown> }): string {
+  const args = a.arguments || {};
+  if (typeof args.path === "string") return args.path;
+  if (typeof args.command === "string") return args.command;
+  if (Array.isArray(args.queries)) return String(args.queries[0]);
+  const keys = Object.keys(args);
+  if (keys[0]) return `${keys[0]}: ${JSON.stringify(args[keys[0]]).slice(0, 40)}`;
+  return "";
+}
+
+function TimelineItem({ event }: { event: TimelineEvent }) {
+  const [open, setOpen] = useState(event.isError ? true : false);
+  const ts = event.timestamp ? new Date(event.timestamp).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
+  if (event.type === "message") {
+    return (
+      <div className={"timeline-msg" + (event.role === "assistant" ? " assistant" : event.role === "user" ? " user" : "")}>
+        <div className="timeline-meta">
+          <span className="role">{event.role}</span>
+          {ts && <span className="ts">{ts}</span>}
+        </div>
+        <div className="timeline-text">{event.text}</div>
+      </div>
+    );
+  }
+  if (event.type === "tool_call") {
+    const detail = formatActionDetail(event);
+    const hasArgs = !!event.arguments && Object.keys(event.arguments).length > 0;
+    return (
+      <div className={"timeline-action" + (open ? " open" : "")}>
+        <div className="timeline-row">
+          <button className="activity-toggle" onClick={() => setOpen((v) => !v)} aria-expanded={open} title={open ? "collapse" : "expand"}>{open ? "-" : "+"}</button>
+          <span className="action-icon">call</span>
+          <span className="action-name">{event.name}</span>
+          {detail && <span className="action-detail" title={detail}>{detail}</span>}
+          {ts && <span className="ts">{ts}</span>}
+        </div>
+        {open && hasArgs && (
+          <div className="activity-body">
+            <pre>{JSON.stringify(event.arguments, null, 2)}</pre>
+          </div>
+        )}
+      </div>
+    );
+  }
+  if (event.type === "tool_result") {
+    const hasText = !!event.text && event.text.length > 0;
+    const expanded = open;
+    return (
+      <div className={"timeline-action" + (event.isError ? " action-error" : "") + (expanded ? " open" : "")}>
+        <div className="timeline-row">
+          <button className="activity-toggle" onClick={() => setOpen((v) => !v)} aria-expanded={expanded} title={expanded ? "collapse" : "expand"}>{expanded ? "-" : "+"}</button>
+          <span className={"action-icon" + (event.isError ? " action-error" : "")}>{event.isError ? "err" : "ok"}</span>
+          <span className="action-name">{event.toolName || "result"}</span>
+          {event.text && <span className={"action-detail" + (event.isError ? " action-error" : "")} title={event.text}>{event.isError ? "Error: " : ""}{event.text}</span>}
+          {ts && <span className="ts">{ts}</span>}
+        </div>
+        {expanded && hasText && (
+          <div className="activity-body">
+            {event.isError ? <strong>Error: </strong> : null}
+            {event.text}
+          </div>
+        )}
+      </div>
+    );
+  }
+  if (event.type === "model_change") {
+    return (
+      <div className="timeline-action">
+        <div className="timeline-row">
+          <span className="action-icon">mdl</span>
+          <span className="action-name">model</span>
+          <span className="action-detail">{event.provider}/{event.modelId}</span>
+          {ts && <span className="ts">{ts}</span>}
+        </div>
+      </div>
+    );
+  }
+  if (event.type === "thinking_level_change") {
+    return (
+      <div className="timeline-action">
+        <div className="timeline-row">
+          <span className="action-icon">think</span>
+          <span className="action-name">thinking</span>
+          <span className="action-detail">{event.thinkingLevel}</span>
+          {ts && <span className="ts">{ts}</span>}
+        </div>
+      </div>
+    );
+  }
+  if (event.type === "complete") {
+    return (
+      <div className="timeline-action">
+        <div className="timeline-row">
+          <span className="action-icon">done</span>
+          <span className="action-name">done</span>
+          {event.stopReason !== "complete" && event.stopReason !== "stop" && <span className="action-detail">{event.stopReason}</span>}
+          {ts && <span className="ts">{ts}</span>}
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
+
+function Timeline({ events }: { events: TimelineEvent[] }) {
+  const visible = events.filter((e) => e.type !== "model_change" && e.type !== "thinking_level_change");
+  if (!visible.length) return <div className="timeline-empty">No session data yet.</div>;
+  return (
+    <div className="timeline" aria-label="Agent session timeline">
+      {visible.map((e, i) => <TimelineItem event={e} key={e.type + (e.timestamp || "") + "-" + i} />)}
+    </div>
+  );
+}
+
 function SidePanel({ fleet, demo, selected, task, onClose }: { fleet: string | null; demo: boolean; selected: string | null; task: string | null; onClose: () => void }) {
   const [resp, setResp] = useState<SessionResp | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -214,11 +361,12 @@ function SidePanel({ fleet, demo, selected, task, onClose }: { fleet: string | n
   };
 
   useEffect(() => {
-    if (!selected || demo) { setResp(null); return; }
+    if (!selected) { setResp(null); return; }
     let alive = true;
     const load = () => {
       const q = fleet ? "&fleet=" + encodeURIComponent(fleet) : "";
-      j<SessionResp>("/api/session/" + selected + "?tail=30" + q).then((r) => alive && setResp(r)).catch(() => {});
+      const demoQ = demo ? "&demo=1" : "";
+      j<SessionResp>("/api/session/" + selected + "?tail=30" + q + demoQ).then((r) => alive && setResp(r)).catch(() => {});
     };
     load();
     const t = setInterval(load, 2000);
@@ -246,26 +394,29 @@ function SidePanel({ fleet, demo, selected, task, onClose }: { fleet: string | n
     if (nearBottom) el.scrollTop = el.scrollHeight;
   }, [resp]);
 
+  const latestModel = resp?.events?.slice().reverse().find((e): e is TimelineEvent & { type: "model_change" } => e.type === "model_change");
+  const latestThinking = resp?.events?.slice().reverse().find((e): e is TimelineEvent & { type: "thinking_level_change" } => e.type === "thinking_level_change");
   if (!selected) return null;
   return (
-    <div id="side" className="open" ref={boxRef} tabIndex={-1} role="complementary" aria-label={`${selected} session`}>
+    <div id="side" className="open" role="complementary" aria-label={`${selected} session`}>
       <div className="side-head">
-        <span className="meta"># {selected} — session</span>
+        <span className="meta"><span className="side-hash">#</span> <strong className="side-id">{selected}</strong> — session</span>
         <button className="icon-btn" onClick={closeAndRestore} aria-label="Close session panel" title="Close (Esc)">×</button>
+        {(!!latestModel || !!latestThinking) && (
+          <div className="side-meta">
+            {latestModel && <span className="side-meta-chip">{latestModel.provider}/{latestModel.modelId}</span>}
+            {latestThinking && <span className="side-meta-chip">thinking: {latestThinking.thinkingLevel}</span>}
+          </div>
+        )}
       </div>
-      {(resp?.task || task) && (
-        <div className="taskbox-side">
-          <div className="taskbox-side-label">task</div>
-          {resp?.task || task}
-        </div>
-      )}
-      {demo && <div className="msg">Session transcripts hidden in demo mode.</div>}
-      {(resp?.entries ?? []).map((e, i) => (
-        <div className="msg" key={i}>
-          <div className={"role role-" + e.role}>{e.role}</div>
-          {e.text}
-        </div>
-      ))}
+      <div className="side-body" ref={boxRef} tabIndex={-1}>
+        <CollapsiblePrompt title="Instructions" text={resp?.task || task || ""} />
+        {resp === null ? (
+          <div className="timeline-loading"><span className="spinner" aria-hidden="true" /> Loading session…</div>
+        ) : (
+          <Timeline events={resp.events ?? []} />
+        )}
+      </div>
     </div>
   );
 }

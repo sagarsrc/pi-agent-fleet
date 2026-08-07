@@ -67,22 +67,24 @@ describe("parseSessionTail", () => {
 
   it("extracts readable entries with tool markers and skips bad lines", () => {
     const out = parseSessionTail(jsonl, 30);
-    expect(out).toEqual([
+    expect(out.entries).toEqual([
       { role: "user", text: "hello" },
       { role: "assistant", text: "hi\n[tool: bash]" },
       { role: "tool", text: "[tool result]" },
     ]);
+    expect(out.actions.map((a) => a.type)).toEqual(["tool_call", "tool_result"]);
+    expect(out.events.map((e) => e.type)).toEqual(["message", "tool_call", "message", "tool_result", "message"]);
   });
 
   it("respects the tail limit", () => {
-    expect(parseSessionTail(jsonl, 1)).toEqual([{ role: "tool", text: "[tool result]" }]);
+    expect(parseSessionTail(jsonl, 1).entries).toEqual([{ role: "tool", text: "[tool result]" }]);
   });
 
   it("caps entry text at 4000 chars", () => {
     const long = `{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"${"x".repeat(5000)}"}]}}`;
     const out = parseSessionTail(long, 5);
-    expect(out[0].text.length).toBe(4001); // 4000 + ellipsis
-    expect(out[0].text.endsWith("…")).toBe(true);
+    expect(out.entries[0].text.length).toBe(4001); // 4000 + ellipsis
+    expect(out.entries[0].text.endsWith("…")).toBe(true);
   });
 });
 
