@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QuickCall Zero-to-Hero — 1-Hour Cram</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --text: #37352f;
+  --muted: #6b6b6b;
+  --light: #f7f6f3;
+  --accent: #2eaadc;
+  --border: #e3e2e0;
+  --code: #f3f3f3;
+  --green: #e3f4e5;
+  --green-text: #2f6f32;
+  --orange: #fff4e6;
+  --orange-text: #a35a00;
+  --blue: #e7f3ff;
+  --blue-text: #0056b3;
+  --yellow: #fff8e1;
+  --yellow-border: #ffb300;
+}
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  margin: 0;
+  padding: 0;
+}
+main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 48px 24px 96px;
+}
+h1, h2, h3, h4 {
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+h1 { font-size: 2.4em; margin: 0 0 0.15em; }
+h2 {
+  font-size: 1.6em;
+  margin-top: 2em;
+  padding-bottom: 0.3em;
+  border-bottom: 2px solid var(--light);
+}
+h3 { font-size: 1.2em; margin-top: 1.6em; }
+h4 { font-size: 1.05em; margin: 1.2em 0 0.4em; }
+.subtitle {
+  color: var(--muted);
+  font-size: 0.95em;
+  margin-bottom: 2em;
+}
+.meta {
+  color: var(--muted);
+  font-size: 0.9em;
+}
+.toc {
+  position: sticky;
+  top: 0;
+  background: rgba(255,255,255,0.96);
+  backdrop-filter: blur(4px);
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+  z-index: 10;
+  margin-bottom: 24px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.toc a {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.85em;
+  margin-right: 14px;
+  padding: 4px 0;
+}
+.toc a:hover { text-decoration: underline; }
+.callout {
+  background: var(--light);
+  border-left: 4px solid var(--accent);
+  padding: 14px 18px;
+  margin: 1.2em 0;
+  border-radius: 0 6px 6px 0;
+}
+.callout p:first-child, .callout h4:first-child { margin-top: 0; }
+.callout p:last-child { margin-bottom: 0; }
+.recap {
+  background: var(--yellow);
+  border-left: 4px solid var(--yellow-border);
+  border-radius: 0 6px 6px 0;
+}
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.7em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.tag-green { background: var(--green); color: var(--green-text); }
+.tag-orange { background: var(--orange); color: var(--orange-text); }
+.tag-blue { background: var(--blue); color: var(--blue-text); }
+ul, ol { padding-left: 1.4em; }
+li { margin: 0.35em 0; }
+li p { margin: 0.2em 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 0.9em;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+th { background: var(--light); font-weight: 600; }
+tr:nth-child(even) { background: #fafafa; }
+td:first-child { font-weight: 500; }
+pre, code {
+  font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, Courier, monospace;
+  font-size: 0.85em;
+}
+pre {
+  background: var(--code);
+  padding: 12px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 0.8em 0;
+}
+li pre { margin: 0.4em 0; }
+code { background: var(--code); padding: 2px 4px; border-radius: 3px; }
+pre code { background: none; padding: 0; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+details {
+  background: var(--light);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin: 1em 0;
+}
+summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--accent);
+  list-style: none;
+}
+summary::-webkit-details-marker { display: none; }
+summary::before {
+  content: "▸ ";
+  display: inline-block;
+  margin-right: 4px;
+  transition: transform 0.15s;
+}
+details[open] summary::before { transform: rotate(90deg); }
+.footnote {
+  font-size: 0.85em;
+  color: var(--muted);
+  margin-top: 2em;
+  border-top: 1px solid var(--border);
+  padding-top: 1em;
+}
+.back-to-top {
+  position: fixed;
+  bottom: 22px;
+  right: 22px;
+  background: var(--accent);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 0.8em;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+@media (max-width: 640px) {
+  main { padding: 24px 16px 80px; }
+  h1 { font-size: 1.9em; }
+  h2 { font-size: 1.35em; }
+  table { font-size: 0.82em; }
+  .toc { padding: 10px 0; }
+}
+</style>
+</head>
+<body>
+
+<nav class="toc" id="top">
+  <a href="#radar">Probe Radar</a>
+  <a href="#hour1">Hour 1</a>
+  <a href="#hour2">Hour 2</a>
+  <a href="#hour3">Hour 3</a>
+  <a href="#recap">Recap</a>
+</nav>
+
+<main>
+
+<h1>QuickCall Zero-to-Hero</h1>
+<p class="subtitle">A 1-hour, self-contained cram doc for the pitch room. Notion-style; built from the full research pack.</p>
+
+<div class="callout">
+  <h4>60-minute reading plan</h4>
+  <ul>
+    <li><strong>0:00–0:10</strong> — Probe Radar: memorize the 20 challenge-ready facts.</li>
+    <li><strong>0:10–0:30</strong> — Hour 1: Foundations (post-training, methods, vocabulary).</li>
+    <li><strong>0:30–0:50</strong> — Hour 2: Thesis (data moat, model pick, budget, pilot, eval).</li>
+    <li><strong>0:50–1:00</strong> — Hour 3: Room (market, rebuttals, risks) + the 4-line emergency recap.</li>
+  </ul>
+</div>
+
+<h2 id="radar">Probe Radar — 20 facts most likely to get challenged</h2>
+<p>All 20 are starred in the original pack; know these cold.</p>
+
+<table>
+<thead>
+<tr><th>#</th><th>Fact</th><th>Why it matters</th></tr>
+</thead>
+<tbody>
+<tr><td>1</td><td>Tulu 3 SFT mixture has <strong>939,344</strong> samples.</td><td>Open post-training stacks are concrete, not mystical.</td></tr>
+<tr><td>2</td><td>Zephyr DPO used <strong>61,135</strong> preference rows.</td><td>Tens of thousands of clean pairs can move a 7B model.</td></tr>
+<tr><td>3</td><td>DeepSeek-R1 used ~<strong>101K</strong> H800-hours for R1-Zero, then 5K for SFT, then <strong>41K</strong> for R1.</td><td>Frontier RL works, but cost can explode.</td></tr>
+<tr><td>4</td><td>DeepSeek-R1 reports <strong>49.2%</strong> on SWE-bench Verified.</td><td>RL-heavy post-training can reach elite coding performance.</td></tr>
+<tr><td>5</td><td>Qwen3-Coder ran agent RL over <strong>20,000</strong> parallel environments.</td><td>“Agent traces → agent RL” is now mainstream.</td></tr>
+<tr><td>6</td><td>LoRA cut trainable params by ~<strong>10,000×</strong> and GPU memory by ~<strong>3×</strong> in the original paper.</td><td>Pilot need not start with full fine-tuning.</td></tr>
+<tr><td>7</td><td>QLoRA showed <strong>65B</strong> fine-tuning on one <strong>48GB</strong> GPU.</td><td>Compute is not the first bottleneck at pilot scale.</td></tr>
+<tr><td>8</td><td>Public H100 cloud price anchor: ~<strong>$2.89/hr</strong>.</td><td>Founder can talk budget without hand-waving.</td></tr>
+<tr><td>9</td><td>Cursor Tab handles <strong>400M requests/day</strong>.</td><td>Product telemetry can be training fuel at real scale.</td></tr>
+<tr><td>10</td><td>Cursor reported <strong>21% fewer</strong> suggestions with <strong>28% higher</strong> accept rate.</td><td>Better model can mean more selective model, not only more output.</td></tr>
+<tr><td>11</td><td>Cursor refresh loop is <strong>1.5–2 hours</strong> from checkpoint to fresh on-policy data.</td><td>Freshness can be a strength, not a liability.</td></tr>
+<tr><td>12</td><td>Copilot study reported <strong>27%</strong> acceptance; accepted/shown correlated with perceived productivity at <strong>ρ = 0.24</strong>.</td><td>Accept rate matters, but only as a coarse proxy.</td></tr>
+<tr><td>13</td><td>Microsoft display-policy study: <strong>168k</strong> suggestions, <strong>535</strong> programmers; hide <strong>25.3%</strong> with <strong>94.7%</strong> rejected and +<strong>7.2pp</strong> accept-rate lift.</td><td>Gating and generation are separate learning problems.</td></tr>
+<tr><td>14</td><td>Decode: <strong>53.6K</strong> in-IDE edit traces from <strong>1,141</strong> developers; <strong>31%</strong> of trajectories fully removed AI completion.</td><td>Post-accept edits are high-value labels; raw accept is not enough.</td></tr>
+<tr><td>15</td><td>MetaMateCR: <strong>64K</strong> internal review-comment → patch pairs; <strong>68%</strong> exact match; +<strong>9.22pp</strong> production lift vs GPT-4o.</td><td>Internal workflow data can beat general frontier models.</td></tr>
+<tr><td>16</td><td>Primary base model: <strong>Qwen2.5-Coder-14B</strong>. Fallback: <strong>Yi-Coder-9B</strong>.</td><td>Clear answer when a lab asks “what would you train first?”</td></tr>
+<tr><td>17</td><td>Budget framing: <strong>$1k</strong> = proof-of-signal, <strong>$10k</strong> = proof-of-repeatability, <strong>$100k</strong> = serious program.</td><td>Makes the project feel executable, not theoretical.</td></tr>
+<tr><td>18</td><td>QuickCall moat is not code volume; it is <strong>decision traces per unit of code</strong>.</td><td>Core thesis.</td></tr>
+<tr><td>19</td><td>OpenAI and Anthropic both publicly want opt-in domain data: Data Partnerships / DPO / Claude Code DPP.</td><td>Partner-not-competitor frame has evidence.</td></tr>
+<tr><td>20</td><td>Small teams can overfit stale or one-person taste; mitigate with rolling windows, decay, pooled base, and team residual adapters.</td><td>Honest answer to the hardest personalization objection.</td></tr>
+</tbody>
+</table>
+
+<h2 id="hour1">Hour 1 — Foundations</h2>
+
+<h3>Pretraining vs post-training</h3>
+<p><strong>Pretraining</strong> makes the model broadly competent: giant next-token training on internet/code corpora until it learns syntax, world knowledge, and generic coding behavior.</p>
+<p><strong>Post-training</strong> comes after: smaller, targeted stages that make the base model useful for specific behaviors (instruction following, pairwise preference alignment, code-agent reward optimization).</p>
+<p>QuickCall story is entirely <strong>post-training</strong>: you are not claiming a new base model, you are claiming better adaptation from real engineering workflow traces.</p>
+
+<h3>SFT vs DPO vs RLHF vs RLVR</h3>
+<table>
+<thead><tr><th>Method</th><th>What it does</th><th>When to use it</th></tr></thead>
+<tbody>
+<tr><td><span class="tag tag-blue">SFT</span> Supervised Fine-Tuning</td><td>Show the model good input→output demonstrations; push probability mass onto those tokens.</td><td>Best warm start for style, repo conventions, task framing, and high-confidence accepted traces.</td></tr>
+<tr><td><span class="tag tag-blue">DPO</span> Direct Preference Optimization</td><td>Give <code>prompt + chosen + rejected</code>; train it to score chosen above rejected.</td><td>Best first monetization of QuickCall traces because telemetry can be denoised into pairs.</td></tr>
+<tr><td><span class="tag tag-blue">RLHF</span> Reinforcement Learning from Human Feedback</td><td>Train a reward model from preferences, then optimize policy with PPO while staying close to reference via KL penalty.</td><td>More flexible than DPO, but heavier: reward model, rollouts, policy drift, reward hacking.</td></tr>
+<tr><td><span class="tag tag-blue">RLVR</span> RL from Verifiable Rewards</td><td>Skip the human reward model when correctness can be checked by tests, compilers, or exact answers.</td><td>Powerful in code, but only when the verifier actually covers the real value.</td></tr>
+</tbody>
+</table>
+
+<p><strong>Founder line:</strong> DPO monetizes offline preference data first; add RLHF/RLVR later.</p>
+
+<h3>GRPO and GSPO in one minute</h3>
+<ul>
+<li><strong>GRPO</strong> — group-relative optimizer from the DeepSeekMath lineage; compares sampled outputs within groups instead of a separate reward model + PPO stack.</li>
+<li><strong>GSPO</strong> — Qwen’s stabler successor for larger-scale reasoning/coding RL.</li>
+<li><strong>Head-of-AI line:</strong> “GRPO/GSPO matter because once you have agent trajectories and verifiable outcomes, optimizer choice becomes a room-level technical detail, not implementation trivia.”</li>
+</ul>
+
+<h3>Worked example: QuickCall trace → preference pair</h3>
+<ol>
+<li>Engineer asks: “Add Zod validation to settings endpoint; keep team logging style; no default export.”</li>
+<li>Model suggests patch A. Engineer accepts it.</li>
+<li>Within 8 minutes, engineer rewrites handler, swaps logger call, adds missing test, removes default export.</li>
+<li>Final patch persists; tests pass; review approves.</li>
+</ol>
+<p>The DPO row:</p>
+<pre><code>{
+  "prompt": "Add Zod validation to settings endpoint; keep team logging style; no default export.",
+  "chosen": "final persisted diff after human correction",
+  "rejected": "original model diff shown first",
+  "metadata": {
+    "pair_type": "accept_then_edit",
+    "validators_pass": true,
+    "review_approved": true,
+    "removed_ratio_15m": 0.0
+  }
+}</code></pre>
+<p><strong>Caveats:</strong> prefer candidate-vs-candidate rows when you have them; if chosen is longer because human had to repair pieces, DPO may learn “longer = better.” Bucket pairs by edit ratio and length delta.</p>
+
+<details>
+<summary>17-term vocabulary table</summary>
+<table>
+<thead><tr><th>Term</th><th>Plain English</th><th>Why it matters here</th></tr></thead>
+<tbody>
+<tr><td>Base model</td><td>Pretrained model before your custom post-training</td><td>QuickCall starts from Qwen/DeepSeek/Yi, not from scratch.</td></tr>
+<tr><td>Pretraining / post-training</td><td>Broad competence first, behavior shaping later</td><td>QuickCall thesis lives in post-training.</td></tr>
+<tr><td>SFT</td><td>Imitate good demonstrations</td><td>Best warm start on public code data + high-confidence accepted traces.</td></tr>
+<tr><td>DPO</td><td>Learn chosen &gt; rejected directly</td><td>Best first monetization of preference traces.</td></tr>
+<tr><td>RLHF</td><td>Preferences → reward model → policy RL</td><td>Heavier than v1 needs.</td></tr>
+<tr><td>RLVR</td><td>RL from executable/verifiable rewards</td><td>Later stage when tests/build/review signals are attached.</td></tr>
+<tr><td>LoRA / QLoRA</td><td>Small adapter training; QLoRA quantizes base to fit less VRAM</td><td>Why pilot can be cheap.</td></tr>
+<tr><td>Reward model</td><td>Model that scores outputs for RLHF</td><td>Useful concept when comparing DPO vs RLHF.</td></tr>
+<tr><td>Chosen / rejected pair</td><td>Same prompt, one answer preferred over another</td><td>Canonical DPO training row.</td></tr>
+<tr><td>β (beta)</td><td>Strength of preference push in DPO-style loss</td><td>Must be tuned; not portable across stacks by faith.</td></tr>
+<tr><td>KL penalty</td><td>Constraint keeping new policy near reference</td><td>Core RLHF stabilization concept.</td></tr>
+<tr><td>Reward hacking</td><td>Model exploits metric without doing real job</td><td>Accept-rate-only optimization can do this.</td></tr>
+<tr><td>Decontamination</td><td>Filter train data that overlaps evals</td><td>Essential for believable coding-eval claims.</td></tr>
+<tr><td>Eval saturation</td><td>Benchmark too stale/easy/leaked to discriminate progress</td><td>Why not headline HumanEval/SWE-bench alone.</td></tr>
+<tr><td>Distillation</td><td>Train smaller student on stronger model outputs or traces</td><td>Cheap way frontier gains spread into practical models.</td></tr>
+<tr><td>GRPO</td><td>Group-relative RL optimizer used in DeepSeekMath lineage</td><td>Probe term when room talks code RL.</td></tr>
+<tr><td>GSPO</td><td>Qwen’s stabler successor to GRPO</td><td>Probe term when room talks Qwen3-Coder.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h3>Hour 1 recap</h3>
+<ul>
+<li>QuickCall is <strong>post-training</strong>, not pretraining.</li>
+<li><strong>SFT</strong> teaches style and task shape; <strong>DPO</strong> teaches preference boundary; <strong>RLVR</strong> teaches verifier-backed correctness.</li>
+<li>First real asset is <strong>clean chosen/rejected or desirable/undesirable rows</strong>, not raw clicks.</li>
+<li><strong>DPO is best v1</strong> because it directly monetizes preference traces without full RLHF complexity.</li>
+<li>Technical trap: DPO can learn <strong>verbosity bias</strong> if pair construction is sloppy.</li>
+</ul>
+
+<h2 id="hour2">Hour 2 — Thesis</h2>
+
+<h3>Why traces → preference pairs are the asset</h3>
+<p>Public git data mostly shows only <strong>final shipped code</strong>. It rarely shows what was shown, rejected, accepted then reverted, lightly polished, or violated local taste.</p>
+<p>QuickCall’s asset is those missing <strong>counterfactuals and corrections</strong>.</p>
+<p><strong>Best founder sentence:</strong> “Our moat is not more code; it is more decision traces per unit of code.”</p>
+
+<h3>Signal taxonomy</h3>
+<table>
+<thead><tr><th>Signal</th><th>What it means</th><th>Trust</th><th>Best training use</th></tr></thead>
+<tbody>
+<tr><td>Candidate A chosen over B</td><td>Clean comparative preference</td><td><span class="tag tag-green">High</span></td><td>DPO</td></tr>
+<tr><td>Accept + persists unchanged / lightly changed</td><td>Likely good suggestion</td><td><span class="tag tag-green">High</span></td><td>SFT, KTO, reward weighting</td></tr>
+<tr><td>Accept + heavy edit to final patch</td><td>Partial value but real defects</td><td><span class="tag tag-orange">Medium-high</span></td><td>DPO (chosen=final, rejected=original)</td></tr>
+<tr><td>Explicit reject / dismiss</td><td>Strong negative</td><td><span class="tag tag-green">High</span></td><td>DPO/KTO negative</td></tr>
+<tr><td>Passive ignore</td><td>Bad suggestion, bad timing, or distraction</td><td><span class="tag tag-orange">Low</span></td><td>Gating/show-hide model, not primary gen label</td></tr>
+<tr><td>Undo / revert / full removal</td><td>Strong negative after trial</td><td><span class="tag tag-green">High</span></td><td>KTO negative, reward weighting</td></tr>
+<tr><td>Tests / lint / typecheck pass</td><td>Objective correctness proxy</td><td><span class="tag tag-green">High</span> when available</td><td>Later RLVR, reward weighting</td></tr>
+<tr><td>Review approved / requested changes</td><td>Delayed human quality label</td><td><span class="tag tag-green">High</span></td><td>Weighting, SFT, team eval</td></tr>
+<tr><td>Session success / time-to-green</td><td>Business-value proxy but confounded</td><td><span class="tag tag-orange">Medium</span></td><td>Eval and weighting, not v1 direct label</td></tr>
+</tbody>
+</table>
+
+<h3>Candidate-trajectory schema</h3>
+<p>One canonical object per shown suggestion before materializing SFT/DPO/KTO rows.</p>
+<pre><code>{
+  "candidate_id": "cand_456",
+  "team_id": "team_123",
+  "tool": "cursor|claude_code|codex|copilot|zed",
+  "prompt": { "messages": [...] },
+  "shown_output": "unified diff or patch",
+  "accept_state": "accepted_full|accepted_partial|rejected|ignored",
+  "persistence": {
+    "unchanged_30s": false,
+    "mostly_unchanged_300s": true,
+    "removed_ratio_15m": 0.0
+  },
+  "validators": { "lint": "pass", "tests": "pass" },
+  "review": { "approved": true },
+  "session": { "success": true },
+  "security": { "rights_class": "tenant_only|poolable", "pii_redacted": true }
+}</code></pre>
+<p>A DPO row is then just <code>prompt + chosen + rejected</code>.</p>
+
+<h3>Prior-art numbers</h3>
+<table>
+<thead><tr><th>System</th><th>Key numbers</th><th>Read-through for QuickCall</th></tr></thead>
+<tbody>
+<tr><td>Cursor Tab</td><td><strong>400M</strong> requests/day; <strong>1.5–2h</strong> refresh loop; <strong>21%</strong> fewer suggestions, <strong>28%</strong> higher accept rate</td><td>Product telemetry can drive a tight model loop.</td></tr>
+<tr><td>Copilot productivity study</td><td><strong>27%</strong> acceptance; <code>accepted_per_shown</code> correlates with productivity at <strong>ρ = 0.24</strong></td><td>Accept rate matters, but only as an imperfect proxy.</td></tr>
+<tr><td>Microsoft display-policy study</td><td><strong>168k</strong> suggestions, <strong>535</strong> programmers; hide <strong>25.3%</strong> while <strong>94.7%</strong> of hidden suggestions would be rejected; +<strong>7.2pp</strong> accept-rate lift</td><td>Show/hide policy is a separate learning problem.</td></tr>
+<tr><td>Decode</td><td><strong>53.6K</strong> in-IDE edit traces from <strong>1,141</strong> developers; <strong>31%</strong> full removals; <strong>50%</strong> of edits within first <strong>50 min</strong></td><td>Post-accept edits are valuable supervision.</td></tr>
+<tr><td>MetaMateCR</td><td><strong>64K</strong> internal review-comment → patch pairs; <strong>68%</strong> exact match; +<strong>9.22pp</strong> vs GPT-4o</td><td>Internal workflow data can beat generic top models.</td></tr>
+<tr><td>Zed Zeta2</td><td>~<strong>100K</strong> teacher-labeled examples; <strong>250k–300k</strong> requests/week collectible; <strong>30%</strong> better acceptance</td><td>Opt-in editor traces can become a durable model asset.</td></tr>
+<tr><td>Augment</td><td>+<strong>3.9%</strong> exact match; completion share of edits <strong>36% → 45%</strong>; developers typed <strong>14%</strong> less</td><td>Edit-event context can matter more than generic context.</td></tr>
+</tbody>
+</table>
+
+<h3>Why open code models are the vehicle</h3>
+<ul>
+<li>Give four things closed APIs do not: <strong>weight access, cheap iteration, per-team deployment flexibility, and transparent post-training recipes</strong>.</li>
+<li>Qwen2.5-Coder exposes explicit SFT/DPO recipe and permissive Apache-2.0 licensing.</li>
+<li>Yi-Coder gives a smaller Apache fallback.</li>
+<li>vLLM keeps the on-prem story credible.</li>
+<li>Translation: “QuickCall can learn on top of commoditizing open capability instead of trying to outrun frontier labs on pretraining.”</li>
+</ul>
+
+<h3>Model comparison</h3>
+<table>
+<thead><tr><th>Model</th><th>Why it fits</th><th>Why not default</th></tr></thead>
+<tbody>
+<tr><td><strong>Qwen2.5-Coder-14B-Instruct</strong> (primary)</td><td>Apache-2.0; strong code benchmarks; explicit SFT/DPO recipe; dense 14B is practical for LoRA/QLoRA.</td><td>Not absolute strongest, but best pilot tradeoff.</td></tr>
+<tr><td><strong>Yi-Coder-9B-Chat</strong> (fallback)</td><td>Apache-2.0; cheaper; small enough for fast loops and on-prem demos.</td><td>Less published post-training detail; lower ceiling.</td></tr>
+<tr><td><strong>Qwen3-Coder-Next</strong></td><td>Best narrative fit for agent traces and code RL; 20,000 parallel environments.</td><td>More complex MoE/hybrid stack; not the best first training target.</td></tr>
+<tr><td>DeepSeek-Coder-V2-Lite / Llama 3.3</td><td>Serious alternatives if the lab prefers DeepSeek or Meta.</td><td>License/story less clean, or less code-specialized.</td></tr>
+</tbody>
+</table>
+<p><strong>Recommended answer:</strong> “Start with Qwen2.5-Coder-14B for signal discovery; keep Yi-Coder-9B as a cheap fallback; move up only after eval lift is real.”</p>
+
+<h3>Training economics and budget tiers</h3>
+<p>Two truths can both be true: frontier RL can be very expensive, but QuickCall v1 is cheap because <strong>LoRA/QLoRA + 7B–14B + offline SFT/DPO</strong> moves cost far below frontier scale.</p>
+<table>
+<thead><tr><th>Budget</th><th>What it buys</th><th>What it does not buy</th></tr></thead>
+<tbody>
+<tr><td><strong>$1k</strong></td><td>Proof-of-signal: multiple 7B/14B LoRA SFT runs, a few DPO runs, first eval harness.</td><td>Not a robust full-FT program.</td></tr>
+<tr><td><strong>$10k</strong></td><td>Proof-of-repeatability: many 14B runs, some 32B LoRA ablations, stronger eval/red-team loop.</td><td>Not a frontier model program.</td></tr>
+<tr><td><strong>$100k</strong></td><td>Serious post-training program: repeated 14B/32B experiments, privacy pipeline, maybe limited RLVR.</td><td>Still not pretraining a frontier model.</td></tr>
+</tbody>
+</table>
+<p><strong>Founder line:</strong> “Pilot proof is cheap. Trustworthy eval and rights-clean data engineering are expensive.”</p>
+
+<h3>Pilot — 30/60/90 plan</h3>
+<table>
+<thead><tr><th>Window</th><th>Deliver</th><th>Success bar</th><th>Kill bar</th></tr></thead>
+<tbody>
+<tr><td><strong>0–30 days</strong></td><td>Consent + redaction pipeline; held-out harness; first SFT adapter. Warm-start with OpenCodeInstruct.</td><td>≥10k high-confidence SFT rows; ≥5k high-confidence preference rows; reproducible baseline.</td><td>Cannot produce clean rows after scrubbing/dedup.</td></tr>
+<tr><td><strong>31–60 days</strong></td><td>Qwen2.5-Coder-14B SFT + DPO; pooled vs team-specific ablation.</td><td>+5–10 pt held-out pairwise preference accuracy; 10–20% edit-distance reduction vs base.</td><td>DPO fails to beat SFT-only or gains appear only on contaminated slices.</td></tr>
+<tr><td><strong>61–90 days</strong></td><td>Shadow deploy with 1–2 partners; online measurement.</td><td>≥10% relative accept-rate lift or ≥15% edit-churn reduction, with no test/lint regressions.</td><td>Online lift &lt;5% relative and no qualitative buy-in.</td></tr>
+</tbody>
+</table>
+<p><strong>Soundbite:</strong> “In 90 days, with one design partner and &lt;$10k cloud spend, we should know whether trace-derived post-training beats untuned base models on accept-more / edit-less.”</p>
+
+<h3>Eval harness</h3>
+<table>
+<thead><tr><th>Layer</th><th>Purpose</th><th>Metrics</th></tr></thead>
+<tbody>
+<tr><td>Public credibility</td><td>Show you did not break coding ability.</td><td>LiveCodeBench, Aider polyglot, MultiPL-E; HumanEval/MBPP as smoke tests.</td></tr>
+<tr><td>Private held-out trace</td><td>Measure product truth.</td><td>Pairwise win rate on chosen vs rejected; edit-distance to final human patch; validator pass rate.</td></tr>
+<tr><td>Team-convention</td><td>Measure taste/adherence, not only correctness.</td><td>Naming/import/logging/test-style checks; internal API correctness; review acceptance proxy.</td></tr>
+<tr><td>Online shadow / A/B</td><td>Measure business impact.</td><td>Accept rate, 5-min/30-min persistence, revert rate, edit churn, time-to-green.</td></tr>
+</tbody>
+</table>
+<p><strong>Rules to say out loud:</strong></p>
+<ul>
+<li>Split by <strong>team + repo + time</strong>.</li>
+<li>Decontaminate against public benchmarks.</li>
+<li>Never use accept rate alone.</li>
+<li>Pair public benchmarks for legitimacy with private traces for value.</li>
+</ul>
+
+<h3>Hour 2 recap</h3>
+<ul>
+<li>QuickCall asset = <strong>cleaned workflow preference data</strong>, not raw telemetry.</li>
+<li>Best v1 row types = <strong>candidate-vs-candidate</strong>, <strong>accept-then-edit</strong>, <strong>reject-then-replacement</strong>.</li>
+<li>Best v1 stack = <strong>public code warm-start SFT → QuickCall SFT → high-confidence DPO</strong>.</li>
+<li>Best v1 model = <strong>Qwen2.5-Coder-14B</strong>, with <strong>Yi-Coder-9B</strong> fallback.</li>
+<li>Main bottleneck = <strong>data cleaning + eval design</strong>, not cloud-GPU access.</li>
+</ul>
+
+<h2 id="hour3">Hour 3 — Room</h2>
+
+<h3>Market map</h3>
+<table>
+<thead><tr><th>Bucket</th><th>Examples</th><th>What they prove</th></tr></thead>
+<tbody>
+<tr><td>Custom model / applied research shops</td><td>Poolside, Magic, Cognition, Cursor, Augment, Zed</td><td>Code-model market is real and high-velocity.</td></tr>
+<tr><td>Enterprise control plane / private deployment</td><td>Sourcegraph, Tabnine, Continue</td><td>Customers care deeply about privacy, BYOM, on-prem, governance.</td></tr>
+<tr><td>Foundation-lab partner surfaces</td><td>OpenAI Data Partnerships + DPO; Anthropic Claude Code DPP</td><td>Labs want opt-in domain data and preference/RL surfaces.</td></tr>
+</tbody>
+</table>
+<p><strong>Position:</strong> between buckets 2 and 3 — a <strong>data/refinement layer</strong>, not a new frontier-model capex story.</p>
+
+<h3>Labs’ incentives — partner, not competitor</h3>
+<ul>
+<li>They want <strong>domain data</strong> (OpenAI Data Partnerships, DPO/RFT products).</li>
+<li>They want <strong>code-session data</strong> specifically (Anthropic DPP explicitly invites Claude Code sessions).</li>
+<li>They do not automatically own business data; both OpenAI and Anthropic say commercial data is not used for training by default.</li>
+</ul>
+<p><strong>Best framing:</strong> “You have models and training infra; we have cross-tool, opt-in, rights-clean coding preference traces you usually do not see outside your own product surface.”</p>
+
+<h3>Flywheel math</h3>
+<p>Illustrative: 100 developers, 2 AI-assisted sessions/day, 20 workdays/month, 1 clean pairable event every 3 sessions after filtering.</p>
+<ul>
+<li>Sessions / month = <strong>100 × 2 × 20 = 4,000</strong></li>
+<li>Clean pair candidates / month ≈ <strong>1,333</strong></li>
+<li>6 months, 1 design partner ≈ <strong>8,000</strong> clean pairs</li>
+<li>12 months, 3 similar partners ≈ <strong>48,000</strong> clean pairs</li>
+</ul>
+<p><strong>Why it matters:</strong> 48k is the same order as Zephyr’s 61k and Decode’s 53.6k. Cold-start is hard, but not absurd.</p>
+
+<h3>Twelve hardest questions and rebuttals</h3>
+<details>
+<summary>Click to expand all 12 rebuttals</summary>
+<ol>
+<li><strong>If Anthropic/OpenAI/GitHub want this, why won’t they do it themselves?</strong><br>They will on first-party surfaces. QuickCall matters only as a cross-tool, provider-neutral, opt-in normalization layer; rights and consent remain real bottlenecks.</li>
+<li><strong>Why not synthetic data or teacher distillation?</strong><br>Synthetic data is great for cold start, but real human correction/revert behavior contains signal synthetics do not observe.</li>
+<li><strong>Do you have enough data volume before patience runs out?</strong><br>First useful signal appears in tens of thousands, not millions. Real risk is usable yield after filtering, not volume alone.</li>
+<li><strong>Aren’t accept/reject labels too noisy?</strong><br>Yes raw. Use candidate-vs-candidate when possible; otherwise require persistence, edit trajectory, undo/revert, validators, and review outcome.</li>
+<li><strong>Why not just use RAG, prompts, and team rules?</strong><br>RAG tells the model what exists; preference traces tell the model what humans actually keep when several plausible diffs are possible.</li>
+<li><strong>Why not rely on tests and RLVR instead of human preferences?</strong><br>Use RLVR when the verifier covers value. Many engineering preferences are weakly verifiable: taste, naming, diff size, reviewer comfort.</li>
+<li><strong>How do you avoid DPO learning the wrong thing—especially “longer patch = better”?</strong><br>Length-controlled pairs, small β sweep, win-rate by length bucket, prefer cleaner candidate-vs-candidate rows.</li>
+<li><strong>How will you prove gains are real, not eval gaming?</strong><br>Split by team + repo + time, decontaminate, report private and public metrics separately, then verify in shadow deployment.</li>
+<li><strong>How do you solve privacy, IP, and licensing?</strong><br>Opt-in collection, edge redaction, secret scanning, rights classes per row, and strict tenant-only vs poolable separation.</li>
+<li><strong>What if team conventions churn or key engineers leave?</strong><br>Use rolling windows, decay old traces, pooled base + team residual adapter, and refresh often.</li>
+<li><strong>If open models commoditize, where is durable value?</strong><br>Rights-clean data, eval harnesses, and team calibration. As base capability commoditizes, org-specific behavior becomes more valuable.</li>
+<li><strong>Does this become services or per-customer fine-tunes?</strong><br>Risk is real. Scalable version is hierarchical: pooled base adapter + per-team residual adapters when data volume justifies.</li>
+</ol>
+</details>
+
+<h3>Honest risk register</h3>
+<table>
+<thead><tr><th>Risk</th><th>Why it is real</th><th>Mitigation</th></tr></thead>
+<tbody>
+<tr><td>Label noise</td><td>Accept/reject can reflect latency, UI placement, or mood.</td><td>Composite labels: persistence, edits, undo, validators, review.</td></tr>
+<tr><td>DPO length / verbosity bias</td><td>Chosen can be longer because human repaired missing pieces.</td><td>Length-controlled pairs, β sweep, length-bucket audits.</td></tr>
+<tr><td>Small-team overfit</td><td>One senior engineer’s taste can dominate.</td><td>Pooled base + team residual adapter + decay.</td></tr>
+<tr><td>Convention drift / stale taste</td><td>Good style changes over time.</td><td>Rolling windows, refresh cadence, explicit rules layer.</td></tr>
+<tr><td>Rights block pooling</td><td>Contracts may allow only tenant-local use.</td><td>Rights classes; tenant-only adapters still valuable.</td></tr>
+<tr><td>Benchmark contamination / eval saturation</td><td>Public code evals leak and age.</td><td>Public + private eval stack; time/repo splits; decontam.</td></tr>
+<tr><td>Incumbent squeeze</td><td>Cursor/GitHub/Anthropic/OpenAI own first-party telemetry.</td><td>Win on neutrality, cross-tool reach, trust, on-prem options.</td></tr>
+<tr><td>RL reward hacking later</td><td>Model can game tests or acceptance.</td><td>Multi-metric eval; keep human preference layer; red-team verifiers.</td></tr>
+<tr><td>Data engineering cost &gt; GPU cost</td><td>Scrubbing, linking, and eval are hard.</td><td>Say it out loud early; make it a plan item, not a surprise.</td></tr>
+</tbody>
+</table>
+
+<h3>Open gaps</h3>
+<ul>
+<li><strong>Raw→clean yield.</strong> Strong precedents, but exact retention after redaction, dedup, and ambiguity filters is uncertain.</li>
+<li><strong>Per-team cold-start threshold.</strong> “Tens of thousands can matter” is supported, but the exact breakpoint by language/repo type is not.</li>
+<li><strong>Objective split by task.</strong> DPO first and RLVR later is sensible, but exact routing across inline edit / refactor / bug-fix / review-comment is still thin.</li>
+<li><strong>Pooling legality in practice.</strong> Technical mitigations are clear; contract-level willingness to allow cross-company pooling remains uncertain.</li>
+<li><strong>Causal online lift durability.</strong> Strong offline harness is necessary, but not a full substitute for multi-month real-user A/B evidence.</li>
+</ul>
+
+<h2 id="recap">4-line emergency recap</h2>
+<div class="callout recap">
+  <ol>
+    <li><strong>Post-training, not pretraining.</strong></li>
+    <li><strong>Decision traces, not code volume.</strong></li>
+    <li><strong>Qwen2.5-Coder-14B + SFT→DPO first.</strong></li>
+    <li><strong>Win condition = engineers accept more and edit less.</strong></li>
+  </ol>
+</div>
+
+<p class="footnote">
+Source pack: <code>/.fleet/quickcall-zero-to-hero-20260802124929/workers/reading-pack/output/zero-to-hero.md</code>.<br>
+Artifact generated: 2026-08-03. Open in any browser; no external assets required.
+</p>
+
+</main>
+
+<a href="#top" class="back-to-top">↑ Top</a>
+
+<script>
+// Smooth scroll for TOC links
+document.querySelectorAll('.toc a[href^="#"]').forEach(function(a){
+  a.addEventListener('click', function(e){
+    e.preventDefault();
+    var id = this.getAttribute('href').slice(1);
+    var el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
+  });
+});
+</script>
+
+</body>
+</html>
