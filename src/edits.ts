@@ -1,6 +1,7 @@
 import { rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ActiveFleet } from "./controller.js";
+import { persistFleetJson } from "./fleet-store.js";
 import { resolveModelReference, type ModelRegistryLike } from "./model-resolution.js";
 import { buildWorkerPrompt } from "./prompts.js";
 import { THINKING_LEVELS } from "./types.js";
@@ -12,10 +13,6 @@ export type ConfigEditKey = "max_concurrent" | "warn_cost_usd" | "model" | "effo
 export interface EditResult {
   ok: boolean;
   message: string;
-}
-
-async function persistSpec(fleet: ActiveFleet): Promise<void> {
-  await writeFile(join(fleet.fleetRoot, "fleet.json"), `${JSON.stringify(fleet.spec, null, 2)}\n`, "utf-8");
 }
 
 export async function editNode(
@@ -63,7 +60,7 @@ export async function editNode(
     default:
       return { ok: false, message: `unknown node edit key "${String(key)}" (keys: model, effort, task)` };
   }
-  await persistSpec(fleet);
+  await persistFleetJson(fleet);
   return { ok: true, message: `node "${nodeId}" ${key} updated` };
 }
 
@@ -102,6 +99,6 @@ export async function editConfig(
     default:
       return { ok: false, message: `unknown config key "${String(key)}" (keys: max_concurrent, warn_cost_usd, model, effort)` };
   }
-  await persistSpec(fleet);
+  await persistFleetJson(fleet);
   return { ok: true, message: `config.${key} updated` };
 }

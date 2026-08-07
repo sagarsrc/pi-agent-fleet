@@ -40,6 +40,15 @@ describe("resolveModelReference", () => {
     const r = resolveModelReference(registryFor(models, []), "k3");
     expect(r.ok).toBe(true);
   });
+
+  it("rejects substring-only model matches", () => {
+    const registry = registryFor([
+      fakeModel("kimi-coding", "kimi-for-coding"),
+      fakeModel("kimi-coding", "k3"),
+    ]);
+    const r = resolveModelReference(registry, "for-coding");
+    expect(r.ok).toBe(false);
+  });
 });
 
 describe("validateFleetModels", () => {
@@ -74,6 +83,25 @@ describe("validateFleetModels", () => {
     if (!r.ok) {
       expect(r.errors.some((e) => e.includes("config.model"))).toBe(true);
       expect(r.errors.some((e) => e.includes('worker "a"'))).toBe(true);
+    }
+  });
+
+  it("formats not-found errors with available and suggested refs", () => {
+    const registry = registryFor([
+      fakeModel("kimi-coding", "kimi-for-coding"),
+      fakeModel("kimi-coding", "k3"),
+      fakeModel("openai", "gpt-5.4-mini"),
+    ]);
+    const spec: FleetSpec = {
+      fleet_name: "t", type: "dag",
+      config: { max_concurrent: 1, model: "kimi-for-coding/k2.7" },
+      workers: [{ id: "a", type: "research", task: "t", depends_on: [], outputs: [] }],
+    };
+    const r = validateFleetModels(spec, registry);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.errors.join("\n")).toContain("available models:");
+      expect(r.errors.join("\n")).toContain("kimi-coding/kimi-for-coding");
     }
   });
 

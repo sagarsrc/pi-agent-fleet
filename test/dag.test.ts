@@ -173,6 +173,42 @@ describe("worktree validation", () => {
   });
 });
 
+describe("repo output ownership", () => {
+  const worker = (id: string, over: Record<string, unknown> = {}) => ({
+    id,
+    type: "code-run",
+    task: "t",
+    depends_on: [],
+    outputs: [],
+    ...over,
+  });
+  const baseFleet = (workers: Record<string, unknown>[]) => ({
+    fleet_name: "t-fleet",
+    type: "dag",
+    config: { max_concurrent: 2 },
+    workers,
+  });
+
+  it("rejects overlapping repo-relative outputs without ordered handoff", () => {
+    const fleet = baseFleet([
+      worker("a", { outputs: [{ path: "src/shared.ts", kind: "file-exists", required: true }] }),
+      worker("b", { outputs: [{ path: "src/shared.ts", kind: "file-exists", required: true }] }),
+    ]);
+    const v = validateFleetSpec(fleet);
+    expect(v.ok).toBe(false);
+    if (!v.ok) expect(v.errors.join("\n")).toContain("repo output ownership conflict");
+  });
+
+  it("allows overlapping repo-relative output with ordered handoff", () => {
+    const fleet = baseFleet([
+      worker("a", { outputs: [{ path: "src/shared.ts", kind: "file-exists", required: true }] }),
+      worker("b", { depends_on: ["a"], outputs: [{ path: "src/shared.ts", kind: "file-exists", required: true }] }),
+    ]);
+    const v = validateFleetSpec(fleet);
+    expect(v.ok).toBe(true);
+  });
+});
+
 describe("getDependents", () => {
   it("returns direct dependents", () => {
     const r = validateFleetSpec(base);

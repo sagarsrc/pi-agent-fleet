@@ -1,19 +1,19 @@
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { activeFleet, currentState, ensureCanvas, killFleet, prepareRelaunch, startLoop, stopCanvas, updateWidget } from "./controller.js";
+import { persistFleetJson } from "./fleet-store.js";
 import { openInBrowser, listFleetRoots } from "./canvas.js";
 import { insertWorkers } from "./insert.js";
 import { editConfig, editNode, type ConfigEditKey, type NodeEditKey } from "./edits.js";
-import { resolveModelReference } from "./model-resolution.js";
+import { listModelRefs, resolveModelReference } from "./model-resolution.js";
 import { clearPreference, loadPreferences, PREFERENCE_KEYS, savePreferences, setPreference } from "./preferences.js";
+import { recoverLatestFleet } from "./fleet-recovery.js";
 import { resetForRelaunch, writeState } from "./state.js";
 import { buildWidgetLines } from "./ui.js";
 import { renderDag } from "./viz.js";
 
 export function registerFleetCommand(pi: ExtensionAPI): void {
   pi.registerCommand("fleet", {
-    description: "Fleet commands: /fleet viz, /fleet status, /fleet canvas [stop], /fleet configure [show|set k v], /fleet add <json>, /fleet edit <node_id>|config ..., /fleet clear, /fleet kill all|<node_id>, /fleet pause, /fleet resume, /fleet relaunch <node_id> [model]",
+    description: "Fleet commands: /fleet viz, /fleet status, /fleet models, /fleet canvas [stop], /fleet configure [show|set k v], /fleet add <json>, /fleet edit <node_id>|config ..., /fleet clear, /fleet kill all|<node_id>, /fleet pause, /fleet resume, /fleet relaunch <node_id> [model]",
     handler: async (args, ctx) => {
       const [cmd, target] = args.trim().split(/\s+/);
       if (cmd === "configure") {
@@ -32,7 +32,7 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
             return;
           }
           const prefs = await loadPreferences();
-          const r = setPreference(prefs, key, value);
+          const r = setPreference(prefs, key, value, ctx.modelRegistry);
           if (!r.ok) {
             ctx.ui.notify(r.error, "error");
             return;
@@ -50,15 +50,19 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
           const key = field.split(":")[0] as (typeof PREFERENCE_KEYS)[number];
           const input = await ctx.ui.input(`${key} (current: ${prefs[key] ?? "—"}):`, "empty clears");
           if (input === undefined) break;
+          let err: string | undefined;
           const next = input.trim().length === 0
             ? clearPreference(prefs, key)
             : (() => {
-                const r = setPreference(prefs, key, input.trim());
-                if (!r.ok) return undefined;
+                const r = setPreference(prefs, key, input.trim(), ctx.modelRegistry);
+                if (!r.ok) {
+                  err = r.error;
+                  return undefined;
+                }
                 return r.prefs;
               })();
           if (next === undefined) {
-            ctx.ui.notify(`invalid value for ${key}`, "error");
+            ctx.ui.notify(err ?? `invalid value for ${key}`, "error");
             continue;
           }
           await savePreferences(next);
@@ -87,7 +91,12 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
         ctx.ui.notify(`fleet canvas: ${url}`, "info");
         return;
       }
-      const active = activeFleet.current;
+      if (cmd === "models") {
+        ctx.ui.notify(`available models:\n${listModelRefs(ctx.modelRegistry).join("\n")}`, "info");
+        return;
+      }
+      const active = activeFleet.current ?? await recoverLatestFleet(ctx.cwd);
+      if (active) activeFleet.current ??= active;
       if (!active) {
         ctx.ui.notify("no fleet planned yet", "warning");
         return;
@@ -106,7 +115,7 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
         return;
       }
       if (cmd === "kill") {
-        const text = await killFleet(target ?? "");
+        const text = await killFleet(target ?? "", ctx.cwd);
         const severity = text.includes("kill") && !text.startsWith("unknown") && !text.includes("already") ? "warning" : "error";
         ctx.ui.notify(text, severity);
         return;
@@ -175,7 +184,7 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
           }
           const canonical = `${resolved.model.provider}/${resolved.model.id}`;
           active.spec.workers = active.spec.workers.map((w) => w.id === target ? { ...w, model: canonical } : w);
-          await writeFile(join(active.fleetRoot, "fleet.json"), `${JSON.stringify(active.spec, null, 2)}\n`, "utf-8");
+          await persistFleetJson(active);
         }
         active.state = resetForRelaunch(active.state, active.spec, target);
         await writeState(active.fleetRoot, active.state);
@@ -241,7 +250,7 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
         if (r.ok) updateWidget(ctx, active);
         return;
       }
-      ctx.ui.notify("usage: /fleet viz | /fleet status | /fleet canvas [stop] | /fleet configure [show|set k v] | /fleet add <json> | /fleet edit <node_id>|config ... | /fleet clear | /fleet kill all|<node_id> | /fleet pause | /fleet resume | /fleet relaunch <node_id> [model]", "warning");
+      ctx.ui.notify("usage: /fleet viz | /fleet status | /fleet models | /fleet canvas [stop] | /fleet configure [show|set k v] | /fleet add <json> | /fleet edit <node_id>|config ... | /fleet clear | /fleet kill all|<node_id> | /fleet pause | /fleet resume | /fleet relaunch <node_id> [model]", "warning");
     },
   });
 }

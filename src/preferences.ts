@@ -1,6 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { canonicalModelRef, formatModelError, resolveModelReference } from "./model-resolution.js";
+import type { ModelRegistryLike } from "./model-resolution.js";
 import { THINKING_LEVELS } from "./types.js";
 import type { ThinkingLevelName } from "./types.js";
 
@@ -59,6 +61,7 @@ export function mergeFleetConfig(raw: unknown, prefs: FleetPreferences): unknown
 export function validatePreferenceValue(
   key: string,
   value: string,
+  registry?: ModelRegistryLike,
 ): { ok: true; parsed: number | string } | { ok: false; error: string } {
   switch (key) {
     case "max_concurrent": {
@@ -79,6 +82,11 @@ export function validatePreferenceValue(
     }
     case "model": {
       if (value.trim().length === 0) return { ok: false, error: "model must be non-empty" };
+      if (registry) {
+        const r = resolveModelReference(registry, value.trim());
+        if (!r.ok) return { ok: false, error: formatModelError(registry, "preference model", value.trim(), r.error) };
+        return { ok: true, parsed: canonicalModelRef(r.model) };
+      }
       return { ok: true, parsed: value.trim() };
     }
     default:
@@ -90,8 +98,9 @@ export function setPreference(
   prefs: FleetPreferences,
   key: string,
   value: string,
+  registry?: ModelRegistryLike,
 ): { ok: true; prefs: FleetPreferences } | { ok: false; error: string } {
-  const v = validatePreferenceValue(key, value);
+  const v = validatePreferenceValue(key, value, registry);
   if (!v.ok) return v;
   return { ok: true, prefs: { ...prefs, [key]: v.parsed } };
 }

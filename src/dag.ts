@@ -1,4 +1,4 @@
-import type { FleetSpec, GateKind, LoopConfig, OutputKind, ThinkingLevelName, WorkerSpec, WorkerType } from "./types.js";
+import type { ContractOutput, FleetSpec, GateKind, JsonOutputSchema, LoopConfig, OutputKind, ThinkingLevelName, WorkerSpec, WorkerType } from "./types.js";
 import { THINKING_LEVELS } from "./types.js";
 
 export class CycleError extends Error {
@@ -49,10 +49,9 @@ export function getDependents(spec: FleetSpec, nodeId: string): string[] {
   return spec.workers.filter((w) => w.depends_on.includes(nodeId)).map((w) => w.id);
 }
 
-function findWorktreeOwnershipConflicts(workers: WorkerSpec[]): string[] {
-  const worktrees = workers.filter((w) => w.worktree);
+export function findRepoOutputOwnershipConflicts(workers: WorkerSpec[]): string[] {
   const claims = new Map<string, string[]>();
-  for (const w of worktrees) {
+  for (const w of workers) {
     for (const o of w.outputs) {
       if (!o.path.startsWith("output/")) {
         const list = claims.get(o.path) ?? [];
@@ -71,7 +70,7 @@ function findWorktreeOwnershipConflicts(workers: WorkerSpec[]): string[] {
         const aBeforeB = byId.get(a)!.depends_on.includes(b);
         const bBeforeA = byId.get(b)!.depends_on.includes(a);
         if (!aBeforeB && !bBeforeA) {
-          errors.push(`worktree ownership conflict: "${path}" claimed by "${a}" and "${b}" without ordered handoff`);
+          errors.push(`repo output ownership conflict: "${path}" claimed by "${a}" and "${b}" without ordered handoff`);
         }
       }
     }
@@ -132,6 +131,21 @@ export function validateFleetSpec(
           errors.push(`worker "${id}": output path must be relative and stay within the repo`);
         }
       }
+      if (o.schema !== undefined) {
+        if (o.kind !== "json") {
+          errors.push(`worker "${id}": output schema only allowed with kind "json"`);
+        } else if (typeof o.schema !== "object" || o.schema === null || Array.isArray(o.schema)) {
+          errors.push(`worker "${id}": output schema must be an object`);
+        } else {
+          const s = o.schema as Record<string, unknown>;
+          for (const name of ["required_keys", "number_keys"] as const) {
+            const keys = s[name];
+            if (keys !== undefined && (!Array.isArray(keys) || keys.some((k) => typeof k !== "string" || k.length === 0))) {
+              errors.push(`worker "${id}": schema.${name} must be an array of non-empty strings`);
+            }
+          }
+        }
+      }
     }
     const wEffort = typeof w.effort === "string" ? w.effort as ThinkingLevelName : undefined;
     if (wEffort !== undefined && !THINKING_LEVELS.includes(wEffort)) {
@@ -144,7 +158,18 @@ export function validateFleetSpec(
       model: typeof w.model === "string" ? w.model : undefined,
       effort: wEffort,
       depends_on: Array.isArray(w.depends_on) ? (w.depends_on as string[]) : [],
-      outputs: outputs.map((o) => ({ path: String(o.path), kind: o.kind as OutputKind, required: o.required !== false })),
+      outputs: outputs.map((o) => {
+        const out: ContractOutput = { path: String(o.path), kind: o.kind as OutputKind, required: o.required !== false };
+        const s = o.schema;
+        if (o.kind === "json" && typeof s === "object" && s !== null && !Array.isArray(s)) {
+          const rec = s as Record<string, unknown>;
+          const schema: JsonOutputSchema = {};
+          if (Array.isArray(rec.required_keys)) schema.required_keys = rec.required_keys as string[];
+          if (Array.isArray(rec.number_keys)) schema.number_keys = rec.number_keys as string[];
+          out.schema = schema;
+        }
+        return out;
+      }),
       iterate: w.iterate !== false,
       worktree: w.worktree === true,
     });
@@ -170,8 +195,8 @@ export function validateFleetSpec(
     if (!hasIntegratorPath(workers)) {
       errors.push("multiple worktree workers require an integrator that depends on all worktree workers");
     }
-    errors.push(...findWorktreeOwnershipConflicts(workers));
   }
+  errors.push(...findRepoOutputOwnershipConflicts(workers));
 
   let loopConfig: LoopConfig | undefined;
   if (cfg.loop !== undefined && cfg.loop !== null) {

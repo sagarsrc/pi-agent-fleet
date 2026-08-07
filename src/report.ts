@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import type { FleetSpec, FleetState } from "./types.js";
@@ -72,6 +72,33 @@ export async function writeReport(opts: {
       if (w.worktree) lines.push(`- fleet/${base}/${w.id}`);
     }
   }
+  lines.push("", "## Next steps", "");
+  const reportPath = join(fleetRoot, "report.md");
+  const failed = Object.entries(state.nodes).find(([, n]) => n.status === "failed" || n.status === "contract_failed");
+  const next = state.status === "planned" ? "fleet_launch"
+    : state.status === "running" ? "fleet_status, fleet_canvas, or fleet_kill <id>|all"
+    : failed ? `fleet_relaunch ${failed[0]}`
+    : state.status === "completed" ? `read report ${reportPath}`
+    : `inspect ${join(fleetRoot, "state.json")}`;
+  lines.push(`- next: ${next}`);
+  lines.push("", "## JSON outputs", "");
+  let anyJson = false;
+  for (const w of spec.workers) {
+    const n = state.nodes[w.id];
+    for (const out of n?.produced_outputs ?? []) {
+      if (!out.startsWith("output/") || !out.endsWith(".json") || out.includes("..")) continue;
+      anyJson = true;
+      let content: string;
+      try {
+        const raw = await readFile(join(fleetRoot, "workers", w.id, out), "utf-8");
+        content = raw.length > 4096 ? `${raw.slice(0, 4096)}\n... (truncated)` : raw;
+      } catch {
+        content = "(unreadable)";
+      }
+      lines.push(`### ${w.id}: ${out}`, "", "```json", content.trimEnd(), "```", "");
+    }
+  }
+  if (!anyJson) lines.push("(none)", "");
   lines.push("", "## Code changes", "", "```", await gitDiffStat(repoCwd, state.created_at), "```", "");
   lines.push("## Artifacts", "", `- state: ${join(fleetRoot, "state.json")}`,
     `- sessions: ${join(fleetRoot, "workers", "<id>", "session.jsonl")}`, "");

@@ -100,6 +100,16 @@ export function buildWorkerPrompt(opts: {
   } else {
     for (const o of worker.outputs) {
       out.push(`- ${o.path} (${o.kind}${o.required ? ", REQUIRED" : ", optional"})`);
+      if (o.kind === "json" && o.schema) {
+        const bits: string[] = [];
+        if (o.schema.required_keys && o.schema.required_keys.length > 0) {
+          bits.push(`must be a JSON object containing keys: ${o.schema.required_keys.join(", ")}`);
+        }
+        if (o.schema.number_keys && o.schema.number_keys.length > 0) {
+          bits.push(`these keys must be numbers or arrays of numbers: ${o.schema.number_keys.join(", ")}`);
+        }
+        if (bits.length > 0) out.push(`  - ${bits.join("; ")}`);
+      }
     }
     out.push("");
   }

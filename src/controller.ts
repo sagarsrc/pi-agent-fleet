@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { writeWorkerPrompts } from "./fleet-store.js";
+import { recoverLatestFleet } from "./fleet-recovery.js";
 import { resolveModelReference, type ModelRegistryLike } from "./model-resolution.js";
 import { insertWorkers } from "./insert.js";
 import { writeReport } from "./report.js";
@@ -60,7 +61,14 @@ export async function currentState(fleet: ActiveFleet): Promise<FleetState> {
 
 export async function statusText(fleet: ActiveFleet): Promise<string> {
   const state = await currentState(fleet);
-  return renderDag(fleet.spec, state);
+  const reportPath = join(fleet.fleetRoot, "report.md");
+  const failed = Object.entries(state.nodes).find(([, n]) => n.status === "failed" || n.status === "contract_failed");
+  const next = state.status === "planned" ? "next: fleet_launch"
+    : state.status === "running" ? "next: fleet_status, fleet_canvas, or fleet_kill <id>|all"
+    : failed ? `next: fleet_relaunch ${failed[0]}`
+    : state.status === "completed" ? `next: read report ${reportPath}`
+    : `next: inspect ${join(fleet.fleetRoot, "state.json")}`;
+  return `${renderDag(fleet.spec, state)}\n\nreport: ${reportPath}\n${next}`;
 }
 
 export async function dagPreview(spec: FleetSpec, state: FleetState | undefined, fleetRoot: string): Promise<string> {
@@ -263,9 +271,21 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
   }
 }
 
-export async function killFleet(target: string): Promise<string> {
-  const active = activeFleet.current;
+export async function killFleet(target: string, cwd?: string): Promise<string> {
+  const active = activeFleet.current ?? (cwd ? await recoverLatestFleet(cwd) : undefined);
+  if (active) activeFleet.current ??= active;
   if (!active) return "no fleet planned yet";
+  if (!active.running) {
+    try {
+      active.state = await readState(active.fleetRoot);
+    } catch {
+      // keep in-memory state
+    }
+    if (active.state.status === "running") {
+      const where = target === "all" ? "fleet" : `node "${target}"`;
+      return `${where} not killed: fleet state on disk is "running" — it appears to be running in another live session; kill it there (this session holds no live scheduler, so a kill here would silently no-op)`;
+    }
+  }
   if (target === "all") {
     active.killSwitch.killed = true;
     return "fleet kill requested";

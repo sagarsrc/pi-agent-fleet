@@ -1,14 +1,16 @@
 import { execFile } from "node:child_process";
 import { createRequire } from "node:module";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { ActiveFleet } from "./controller.js";
-import { readState } from "./state.js";
-import type { FleetSpec, FleetState } from "./types.js";
+import { listFleetRoots, readDiskFleet } from "./fleet-recovery.js";
+
+export { listFleetRoots, readDiskFleet };
+export type { FleetRootInfo } from "./fleet-recovery.js";
 
 const execFileP = promisify(execFile);
 
@@ -844,63 +846,6 @@ export async function renderCanvasPage(): Promise<string> {
 <script>${bundle}</script>
 </body>
 </html>`;
-}
-
-export interface FleetRootInfo {
-  name: string;
-  root: string;
-  status: string;
-  created_at: string;
-}
-
-export async function readDiskFleet(fleetRoot: string): Promise<ActiveFleet> {
-  const spec = JSON.parse(await readFile(join(fleetRoot, "fleet.json"), "utf-8")) as FleetSpec;
-  const state = await readState(fleetRoot);
-  return {
-    spec,
-    fleetRoot,
-    state,
-    killSwitch: { killed: false },
-    pauseSwitch: { paused: false },
-    running: false,
-    sessions: new Map(),
-    killedNodes: new Set(),
-  };
-}
-
-export async function listFleetRoots(cwd: string): Promise<FleetRootInfo[]> {
-  const base = join(cwd, ".fleet");
-  let entries: string[];
-  try {
-    entries = await readdir(base);
-  } catch {
-    return [];
-  }
-  const out: FleetRootInfo[] = [];
-  for (const name of entries) {
-    const root = join(base, name);
-    try {
-      const s = await stat(join(root, "fleet.json"));
-      if (!s.isFile()) continue;
-      const state = JSON.parse(await readFile(join(root, "state.json"), "utf-8")) as Partial<FleetState>;
-      out.push({
-        name,
-        root,
-        status: typeof state.status === "string" ? state.status : "unknown",
-        created_at: typeof state.created_at === "string" ? state.created_at : new Date(s.mtimeMs).toISOString(),
-      });
-    } catch {
-      // not a fleet root (no fleet.json) or unreadable state — skip or mark unknown
-      try {
-        await stat(join(root, "fleet.json"));
-        out.push({ name, root, status: "unknown", created_at: "" });
-      } catch {
-        // not a fleet root
-      }
-    }
-  }
-  out.sort((a, b) => b.created_at.localeCompare(a.created_at));
-  return out;
 }
 
 export interface CanvasServer {

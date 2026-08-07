@@ -1,4 +1,3 @@
-import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -8,8 +7,9 @@ import { loadPreferences, mergeFleetConfig } from "./preferences.js";
 import { activeFleet, currentState, dagPreview, ensureCanvas, killFleet, prepareRelaunch, startLoop, statusText, stopCanvas, updateWidget } from "./controller.js";
 import { openInBrowser, listFleetRoots } from "./canvas.js";
 import { editConfig, editNode, type ConfigEditKey, type NodeEditKey } from "./edits.js";
-import { ensureFleetGitignore, fleetRootFor, isInsideGitRepo, writePlanFiles, writeWorkerPrompts } from "./fleet-store.js";
-import { resolveModelReference, validateFleetModels } from "./model-resolution.js";
+import { ensureFleetGitignore, fleetRootFor, isInsideGitRepo, persistFleetJson, writePlanFiles, writeWorkerPrompts } from "./fleet-store.js";
+import { recoverLatestFleet } from "./fleet-recovery.js";
+import { listModelRefs, resolveModelReference, validateFleetModels } from "./model-resolution.js";
 import { runFleetDesign, slugifyFleetName } from "./planner.js";
 import { writeReport } from "./report.js";
 import { initFleetState, resetForRelaunch, writeState } from "./state.js";
@@ -27,6 +27,10 @@ export function registerFleetTools(pi: ExtensionAPI): void {
       Type.Literal("verdict"), Type.Literal("json"), Type.Literal("yaml"),
     ]),
     required: Type.Optional(Type.Boolean()),
+    schema: Type.Optional(Type.Object({
+      required_keys: Type.Optional(Type.Array(Type.String(), { description: "JSON object keys that must be present" })),
+      number_keys: Type.Optional(Type.Array(Type.String(), { description: "JSON object keys that must be numbers or arrays of numbers" })),
+    }, { description: "Optional JSON object shape; only valid with kind json" })),
   });
   const EffortSchema = Type.Union([
     Type.Literal("off"), Type.Literal("minimal"), Type.Literal("low"),
@@ -67,7 +71,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
     name: "fleet_plan",
     label: "Fleet Plan",
     description:
-      "Validate a fleet DAG definition, create its fleet root, and return an ASCII preview. Does NOT launch. PREREQUISITE: if the user's request is prose requirements or a goal rather than an explicit fleet definition, you MUST call fleet_design first and pass its drafted definition here — do not hand-write the fleet JSON yourself. Present the preview to the user; call fleet_launch only after they explicitly confirm. Choose models by task difficulty: cheap/fast models for trivial writers and validators, mid-tier coding models for code-run workers, strongest reasoning models for reviewers and synthesizers. When several models fit a tier, vary providers across nodes instead of defaulting to one family. Set worker.model per node to override config.model. All model refs are validated against the live registry — planning fails if any model is unavailable.",
+      "Validate a fleet DAG definition, create its fleet root, and return an ASCII preview. Does NOT launch. PREREQUISITE: if the user's request is prose requirements or a goal rather than an explicit fleet definition, you MUST call fleet_design first and pass its drafted definition here — do not hand-write the fleet JSON yourself. Present the preview to the user; call fleet_launch only after they explicitly confirm. Choose models by task difficulty: cheap/fast models for trivial writers and validators, mid-tier coding models for code-run workers, strongest reasoning models for reviewers and synthesizers. When several models fit a tier, vary providers across nodes instead of defaulting to one family. Set worker.model per node to override config.model. All model refs are validated against the live registry — planning fails if any model is unavailable. Call fleet_models first if you do not know exact provider/model IDs.",
     promptSnippet: "Plan a DAG-of-agents fleet from a fleet definition without launching it.",
     parameters: Type.Object({
       fleet: FleetSchema,
@@ -129,13 +133,25 @@ export function registerFleetTools(pi: ExtensionAPI): void {
   });
 
   pi.registerTool({
+    name: "fleet_models",
+    label: "Fleet Models",
+    description: "List available model refs (provider/id) from the live registry. Call this before fleet_plan if you do not know exact provider/model IDs.",
+    promptSnippet: "List available fleet model refs.",
+    parameters: Type.Object({}),
+    async execute(_id, _params, _signal, _onUpdate, ctx) {
+      return textResult(`available models:\n${listModelRefs(ctx.modelRegistry).join("\n")}`);
+    },
+  });
+
+  pi.registerTool({
     name: "fleet_status",
     label: "Fleet Status",
     description: "Show the current active fleet DAG and live widget lines.",
     promptSnippet: "Show current active fleet status.",
     parameters: Type.Object({}),
-    async execute() {
-      const active = activeFleet.current;
+    async execute(_id, _params, _signal, _onUpdate, ctx) {
+      const active = activeFleet.current ?? await recoverLatestFleet(ctx.cwd);
+      if (active) activeFleet.current ??= active;
       if (!active) return textResult("no fleet planned yet");
       return textResult(await statusText(active));
     },
@@ -147,8 +163,8 @@ export function registerFleetTools(pi: ExtensionAPI): void {
     description: "Request a fleet-wide kill (target \"all\") or kill a single node by worker id. Killing a running node aborts its session; killing a pending node marks it killed at the next dispatch pass. Killed nodes can be revived with fleet_relaunch.",
     promptSnippet: "Kill the whole fleet or a single node by worker id.",
     parameters: Type.Object({ target: Type.String({ description: "all or a worker id" }) }),
-    async execute(_id, params) {
-      return textResult(await killFleet(params.target));
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      return textResult(await killFleet(params.target, ctx.cwd));
     },
   });
 
@@ -216,7 +232,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
         if (!resolved.ok) return textResult(resolved.error);
         const canonical = `${resolved.model.provider}/${resolved.model.id}`;
         fleet.spec.workers = fleet.spec.workers.map((w) => w.id === params.node_id ? { ...w, model: canonical } : w);
-        await writeFile(join(fleet.fleetRoot, "fleet.json"), `${JSON.stringify(fleet.spec, null, 2)}\n`, "utf-8");
+        await persistFleetJson(fleet);
       }
       fleet.state = resetForRelaunch(fleet.state, fleet.spec, params.node_id);
       await writeState(fleet.fleetRoot, fleet.state);
@@ -289,7 +305,8 @@ export function registerFleetTools(pi: ExtensionAPI): void {
     promptSnippet: "Regenerate the active fleet report.",
     parameters: Type.Object({}),
     async execute(_id, _params, _signal, _onUpdate, ctx) {
-      const active = activeFleet.current;
+      const active = activeFleet.current ?? await recoverLatestFleet(ctx.cwd);
+      if (active) activeFleet.current ??= active;
       if (!active) return textResult("no fleet planned yet");
       const state = await currentState(active);
       const report = await writeReport({ spec: active.spec, state, fleetRoot: active.fleetRoot, repoCwd: ctx.cwd });

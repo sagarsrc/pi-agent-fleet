@@ -110,6 +110,7 @@ describe("killFleet node targets", () => {
     try {
       expect(await killFleet("zzz")).toContain('unknown node "zzz"');
       fleet.state = patchNode(fleet.fleetRoot, fleet.state, "a", { status: "completed" });
+      await writeState(fleet.fleetRoot, fleet.state);
       expect(await killFleet("a")).toContain("already completed");
     } finally {
       activeFleet.current = undefined;

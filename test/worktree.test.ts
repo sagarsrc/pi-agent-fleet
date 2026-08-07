@@ -112,4 +112,12 @@ describe("worktree helpers", () => {
     const list = await execFileP("git", ["worktree", "list"], { cwd: base });
     expect(list.stdout).not.toContain(wt);
   });
+
+  it("recreates a worktree when the deterministic branch already exists", async () => {
+    const repo = await mkdtemp(join(tmpdir(), "fleet-wt-"));
+    await initRepo(repo);
+    const fleetRoot = join(repo, ".fleet", "demo-20260101000000");
+    await createWorktree({ baseRepo: repo, fleetName: "demo", nodeId: "n1", fleetRoot });
+    await createWorktree({ baseRepo: repo, fleetName: "demo", nodeId: "n1", fleetRoot });
+  });
 });

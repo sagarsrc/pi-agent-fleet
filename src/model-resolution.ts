@@ -16,6 +16,32 @@ export function aliasesFor(model: Model<Api>): string[] {
   ];
 }
 
+export function canonicalModelRef(model: Model<Api>): string {
+  return `${model.provider}/${model.id}`;
+}
+
+export function listModelRefs(registry: ModelRegistryLike, limit = 40): string[] {
+  const models = registry.getAvailable().length > 0 ? registry.getAvailable() : registry.getAll();
+  return [...new Map(models.map((m) => [canonicalModelRef(m), m])).keys()].slice(0, limit);
+}
+
+export function suggestModelRefs(registry: ModelRegistryLike, ref: string, limit = 8): string[] {
+  const needle = ref.toLowerCase();
+  return listModelRefs(registry, 200)
+    .filter((r) => r.toLowerCase().includes(needle) || needle.split(/[/-]/).some((p) => p.length > 2 && r.toLowerCase().includes(p)))
+    .slice(0, limit);
+}
+
+export function formatModelError(registry: ModelRegistryLike, label: string, ref: string, error: string): string {
+  const suggestions = suggestModelRefs(registry, ref);
+  const available = listModelRefs(registry);
+  return [
+    `${label}: ${error}`,
+    suggestions.length > 0 ? `suggestions: ${suggestions.join(", ")}` : undefined,
+    `available models: ${available.join(", ")}`,
+  ].filter(Boolean).join("\n");
+}
+
 export function resolveModelReference(
   registry: ModelRegistryLike,
   ref: string,
@@ -36,7 +62,6 @@ export function resolveModelReference(
   tiers.push(pool.filter((m) => m.id.toLowerCase() === needle));
   tiers.push(pool.filter((m) => byAlias(m, (a) => a === needle)));
   tiers.push(pool.filter((m) => byAlias(m, (a) => a.startsWith(needle))));
-  tiers.push(pool.filter((m) => byAlias(m, (a) => a.includes(needle))));
 
   for (const tier of tiers) {
     const unique = [...new Map(tier.map((m) => [`${m.provider}/${m.id}`, m])).values()];
@@ -67,7 +92,7 @@ export function validateFleetModels(
     if (seen.has(key)) continue;
     seen.add(key);
     const r = resolveModelReference(registry, ref);
-    if (!r.ok) errors.push(`${label}: ${r.error}`);
+    if (!r.ok) errors.push(formatModelError(registry, label, ref, r.error));
   }
   return errors.length > 0 ? { ok: false, errors } : { ok: true };
 }
