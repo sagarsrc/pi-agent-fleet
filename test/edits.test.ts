@@ -46,11 +46,23 @@ describe("editNode", () => {
     expect(persisted.workers[0].model).toBe("kimi/k3");
   });
 
-  it("rejects edits to a non-pending node", async () => {
+  it("rejects edits to a running or completed node", async () => {
     const fleet = await fleetAt("running");
     const r = await editNode(fleet, "a", "model", "k3", registry);
     expect(r.ok).toBe(false);
     expect(r.message).toContain("running");
+  });
+
+  it("allows editing a failed node and regenerates prompt.md", async () => {
+    const fleet = await fleetAt("pending");
+    fleet.state.nodes.a = { ...fleet.state.nodes.a, status: "failed" };
+    const dir = join(fleet.fleetRoot, "workers", "a");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "prompt.md"), buildWorkerPrompt({ spec: fleet.spec, state: fleet.state, workerId: "a", fleetRoot: fleet.fleetRoot }), "utf-8");
+    const r = await editNode(fleet, "a", "task", "fixed task after failure", registry);
+    expect(r.ok).toBe(true);
+    const prompt = await readFile(join(dir, "prompt.md"), "utf-8");
+    expect(prompt).toContain("fixed task after failure");
   });
 
   it("rejects unknown nodes, unknown keys, and bad values", async () => {

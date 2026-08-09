@@ -70,6 +70,8 @@ export interface ContractCheck {
   required: boolean;
   ok: boolean;
   error?: string;
+  actualPath?: string;
+  firstLines?: string;
 }
 
 export interface ContractResult {

@@ -69,6 +69,26 @@ describe("runFleet", () => {
     expect(s.nodes.a.contract_result?.ok).toBe(false);
     expect(s.nodes.b.status).toBe("blocked");
   });
+  it("preserves artifact path and failure details on contract_failed", async () => {
+    const sp = spec();
+    sp.workers[0].outputs = [{ path: "output/findings.md", kind: "markdown", required: true }];
+    const fleetRoot = await root();
+    const s = await runFleet({
+      spec: sp, fleetRoot, repoCwd: "/tmp",
+      spawn: async (id) => {
+        if (id === "a") await writeFile(join(fleetRoot, "workers", "a", "output", "findings.md"), "Status: approved\n\nno heading here");
+        return { ok: true, turns: 1, tokens: 5 };
+      },
+    });
+    expect(s.nodes.a.status).toBe("contract_failed");
+    expect(s.nodes.a.contract_result?.checks[0].ok).toBe(false);
+    expect(s.nodes.a.produced_outputs).toContain("output/findings.md");
+    expect(s.nodes.a.status_note).toContain("output/findings.md");
+    expect(s.nodes.a.status_note).toContain("no markdown heading after leading metadata line");
+    expect(s.nodes.a.status_note).toContain("actual:");
+    expect(s.nodes.a.status_note).toContain("Status: approved");
+    expect(s.nodes.b.status).toBe("blocked");
+  });
   it("passes contract when worker wrote the file", async () => {
     const sp = spec();
     sp.workers[0].outputs = [{ path: "output/findings.md", kind: "markdown", required: true }];

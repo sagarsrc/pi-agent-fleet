@@ -1,6 +1,6 @@
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { verifyOutputs } from "./contracts.js";
+import { contractFailureNote, verifyOutputs } from "./contracts.js";
 import { archiveIteration, initFleetState, patchNode, resetForIteration, snapshotIteration, writeState } from "./state.js";
 import { TERMINAL_NODE_STATUSES } from "./types.js";
 import type { FleetSpec, FleetState, IterationSnapshot, NodeState, Verdict, WorkerSpec } from "./types.js";
@@ -258,7 +258,8 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
             tokens: res.tokens,
             cost_usd_estimate: res.cost ?? 0,
             contract_result: contract,
-            produced_outputs: contract.checks.filter((c) => c.ok).map((c) => c.path),
+            produced_outputs: contract.checks.filter((c) => c.ok || c.actualPath).map((c) => c.path),
+            status_note: contract.ok ? undefined : contractFailureNote(contract.checks),
           });
           if (contract.ok) {
             const note = await opts.onNodeCompleted?.(w.id);

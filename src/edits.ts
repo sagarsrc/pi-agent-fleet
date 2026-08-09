@@ -4,8 +4,8 @@ import type { ActiveFleet } from "./controller.js";
 import { persistFleetJson } from "./fleet-store.js";
 import { resolveModelReference, type ModelRegistryLike } from "./model-resolution.js";
 import { buildWorkerPrompt } from "./prompts.js";
+import type { NodeStatus, ThinkingLevelName } from "./types.js";
 import { THINKING_LEVELS } from "./types.js";
-import type { ThinkingLevelName } from "./types.js";
 
 export type NodeEditKey = "model" | "effort" | "task";
 export type ConfigEditKey = "max_concurrent" | "warn_cost_usd" | "model" | "effort";
@@ -14,6 +14,8 @@ export interface EditResult {
   ok: boolean;
   message: string;
 }
+
+const EDITABLE_NODE_STATUSES: ReadonlySet<NodeStatus> = new Set(["pending", "ready", "failed", "contract_failed", "killed"]);
 
 export async function editNode(
   fleet: ActiveFleet,
@@ -25,9 +27,9 @@ export async function editNode(
   const worker = fleet.spec.workers.find((w) => w.id === nodeId);
   const node = fleet.state.nodes[nodeId];
   if (!worker || !node) return { ok: false, message: `unknown node "${nodeId}"` };
-  if (node.status !== "pending" && node.status !== "ready") {
-    return { ok: false, message: `node "${nodeId}" is ${node.status}; only pending nodes can be edited` };
-  }
+  if (!EDITABLE_NODE_STATUSES.has(node.status)) {
+      return { ok: false, message: `node "${nodeId}" is ${node.status}; only pending, failed, contract_failed, or killed nodes can be edited` };
+    }
   switch (key) {
     case "model": {
       const r = resolveModelReference(registry, value);

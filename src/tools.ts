@@ -88,11 +88,12 @@ export function registerFleetTools(pi: ExtensionAPI): void {
       const state = initFleetState(v.spec);
       await ensureFleetGitignore(ctx.cwd);
       await writePlanFiles(fleetRoot, v.spec, state);
-      const active = activeFleet.current = { spec: v.spec, fleetRoot, state, killSwitch: { killed: false }, pauseSwitch: { paused: false }, running: false, costWarned: false, sessions: new Map(), killedNodes: new Set() };
+      const active = activeFleet.current = { spec: v.spec, fleetRoot, state, killSwitch: { killed: false }, pauseSwitch: { paused: false }, running: false, costWarned: false, sessions: new Map(), killedNodes: new Set(), widgetVisible: false };
       updateWidget(ctx, active);
 
       const dag = await dagPreview(v.spec, undefined, fleetRoot);
-      return textResult(`${dag}\n\nfleet root: ${fleetRoot}\nShow this preview to the user. Call fleet_launch only after they explicitly confirm.`, { fleetRoot, layers: v.layers });
+      const canvas = ctx.hasUI ? await ensureCanvas(ctx) : undefined;
+      return textResult(`${dag}\n\nfleet root: ${fleetRoot}${canvas ? `\nfleet canvas: ${canvas.url}` : ""}\n\nShow this preview to the user. Call fleet_launch only after they explicitly confirm.`, { fleetRoot, layers: v.layers, canvasUrl: canvas?.url });
     },
   });
 
@@ -121,14 +122,21 @@ export function registerFleetTools(pi: ExtensionAPI): void {
         }
       }
 
+      if (fleet.state.status !== "planned" || Object.values(fleet.state.nodes).some((n) => n.status !== "pending")) {
+        return textResult(
+          `fleet already started (${fleet.state.status}); use fleet_continue to resume pending work, fleet_relaunch <node_id> to retry a failed node, or start a new fleet with fleet_plan`,
+        );
+      }
+
       if (ctx.hasUI && !params.skip_confirm) {
         const ok = await ctx.ui.confirm("Launch fleet?", renderDag(fleet.spec));
         if (!ok) return textResult("fleet launch aborted");
       }
 
       await writeWorkerPrompts(fleet);
+      const canvas = ctx.hasUI ? await ensureCanvas(ctx) : undefined;
       void startLoop(fleet, ctx, false);
-      return textResult("fleet launched");
+      return textResult(`fleet launched${canvas ? `\n\nfleet canvas: ${canvas.url}` : ""}`, { canvasUrl: canvas?.url });
     },
   });
 
@@ -205,6 +213,33 @@ export function registerFleetTools(pi: ExtensionAPI): void {
   });
 
   pi.registerTool({
+    name: "fleet_continue",
+    label: "Fleet Continue",
+    description: "Continue the active fleet from its current state without restarting completed nodes. Dispatches pending and ready nodes and unblocks downstream as dependencies complete. Use this after a failed/killed fleet to resume work safely.",
+    promptSnippet: "Continue the active fleet from current state.",
+    parameters: Type.Object({}),
+    async execute(_id, _params, _signal, _onUpdate, ctx) {
+      const active = activeFleet.current ?? await recoverLatestFleet(ctx.cwd);
+      if (active) activeFleet.current ??= active;
+      if (!active) return textResult("no fleet planned yet");
+      if (active.running) return textResult("fleet already running");
+      await currentState(active);
+      if (active.state.status === "completed") return textResult("fleet completed, nothing to continue");
+      if (active.state.status === "paused") return textResult("fleet is paused; use fleet_resume for paused loop fleets");
+      if (active.state.status === "planned" && Object.values(active.state.nodes).every((n) => n.status === "pending")) {
+        return textResult("fleet has not started; use fleet_launch");
+      }
+      active.killSwitch.killed = false;
+      active.pauseSwitch.paused = false;
+      active.state = { ...active.state, status: "running", paused: false };
+      await writeState(active.fleetRoot, active.state);
+      await writeWorkerPrompts(active);
+      void startLoop(active, ctx, false, true);
+      return textResult("fleet continue requested");
+    },
+  });
+
+  pi.registerTool({
     name: "fleet_relaunch",
     label: "Fleet Relaunch",
     description: "Relaunch a failed node and any blocked downstream dependents. Optionally override the worker model for this run.",
@@ -236,6 +271,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
       }
       fleet.state = resetForRelaunch(fleet.state, fleet.spec, params.node_id);
       await writeState(fleet.fleetRoot, fleet.state);
+      await writeWorkerPrompts(fleet);
       prepareRelaunch(fleet, params.node_id);
       void startLoop(fleet, ctx, false, true);
       return textResult(`fleet relaunch requested for ${params.node_id}`);
@@ -317,7 +353,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "fleet_edit",
     label: "Fleet Edit",
-    description: "Edit the active fleet: a pending node's model, effort, or task — or fleet config (max_concurrent, warn_cost_usd, model, effort) when node_id is omitted. Changes persist to fleet.json and apply to nodes not yet dispatched. Refuses edits to nodes already running or terminal.",
+    description: "Edit the active fleet: a pending or relaunchable node's model, effort, or task — or fleet config (max_concurrent, warn_cost_usd, model, effort) when node_id is omitted. Changes persist to fleet.json and apply immediately. Edits to running, completed, or blocked nodes are refused; failed, contract_failed, and killed nodes can be edited so relaunch uses the updated task.",
     promptSnippet: "Edit a pending fleet node or fleet config.",
     parameters: Type.Object({
       node_id: Type.Optional(Type.String({ description: "Worker id to edit; omit for fleet config edits" })),

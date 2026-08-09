@@ -23,10 +23,16 @@ describe("verifyOutputs", () => {
     const r = await verifyOutputs({ workerDir, repoCwd, outputs: [{ path: "output/findings.md", kind: "markdown", required: true }] });
     expect(r.ok).toBe(true);
   });
-  it("fails markdown without heading", async () => {
-    const { workerDir, repoCwd } = await setup({ "output/bad.md": "no heading" });
-    const r = await verifyOutputs({ workerDir, repoCwd, outputs: [{ path: "output/bad.md", kind: "markdown", required: true }] });
+  it("passes markdown with leading Status metadata before heading", async () => {
+    const { workerDir, repoCwd } = await setup({ "output/review.md": "Status: approved\n\n# Review\nbody" });
+    const r = await verifyOutputs({ workerDir, repoCwd, outputs: [{ path: "output/review.md", kind: "markdown", required: true }] });
+    expect(r.ok).toBe(true);
+  });
+  it("fails markdown with leading Status but no heading", async () => {
+    const { workerDir, repoCwd } = await setup({ "output/review.md": "Status: approved\n\nno heading" });
+    const r = await verifyOutputs({ workerDir, repoCwd, outputs: [{ path: "output/review.md", kind: "markdown", required: true }] });
     expect(r.ok).toBe(false);
+    expect(r.checks[0].error).toContain("no markdown heading after leading metadata line");
   });
   it("file-exists resolves repo-relative paths", async () => {
     const { workerDir, repoCwd } = await setup({ "src/login.ts": "export const x = 1;" });

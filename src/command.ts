@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { activeFleet, currentState, ensureCanvas, killFleet, prepareRelaunch, startLoop, stopCanvas, updateWidget } from "./controller.js";
-import { persistFleetJson } from "./fleet-store.js";
+import { activeFleet, currentState, ensureCanvas, killFleet, prepareRelaunch, startLoop, statusText, stopCanvas, updateWidget } from "./controller.js";
+import { persistFleetJson, writeWorkerPrompts } from "./fleet-store.js";
 import { openInBrowser, listFleetRoots } from "./canvas.js";
 import { insertWorkers } from "./insert.js";
 import { editConfig, editNode, type ConfigEditKey, type NodeEditKey } from "./edits.js";
@@ -13,7 +13,7 @@ import { renderDag } from "./viz.js";
 
 export function registerFleetCommand(pi: ExtensionAPI): void {
   pi.registerCommand("fleet", {
-    description: "Fleet commands: /fleet viz, /fleet status, /fleet models, /fleet canvas [stop], /fleet configure [show|set k v], /fleet add <json>, /fleet edit <node_id>|config ..., /fleet clear, /fleet kill all|<node_id>, /fleet pause, /fleet resume, /fleet relaunch <node_id> [model]",
+    description: "Fleet commands: /fleet viz, /fleet status, /fleet models, /fleet canvas [stop], /fleet configure [show|set k v], /fleet add <json>, /fleet edit <node_id>|config ..., /fleet clear, /fleet kill all|<node_id>, /fleet pause, /fleet resume, /fleet continue, /fleet relaunch <node_id> [model]",
     handler: async (args, ctx) => {
       const [cmd, target] = args.trim().split(/\s+/);
       if (cmd === "configure") {
@@ -102,16 +102,21 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
         return;
       }
       if (cmd === "viz") {
+        active.widgetVisible = true;
         const lines = renderDag(active.spec, active.state).split("\n");
         ctx.ui.setWidget("fleet", lines);
+        ctx.ui.notify("fleet widget visible; fleet canvas link: " + (await ensureCanvas(ctx)).url, "info");
         return;
       }
       if (cmd === "status" || cmd === "") {
-        ctx.ui.setWidget("fleet", buildWidgetLines(active.spec, active.state));
+        const server = await ensureCanvas(ctx);
+        ctx.ui.notify(`${await statusText(active)}\n\nfleet canvas: ${server.url}`, "info");
         return;
       }
       if (cmd === "clear") {
+        active.widgetVisible = false;
         ctx.ui.setWidget("fleet", []);
+        ctx.ui.notify("fleet widget hidden", "info");
         return;
       }
       if (cmd === "kill") {
@@ -148,6 +153,33 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
         active.pauseSwitch.paused = false;
         void startLoop(active, ctx, true);
         ctx.ui.notify("fleet resumed", "info");
+        return;
+      }
+      if (cmd === "continue") {
+        if (active.running) {
+          ctx.ui.notify("fleet already running", "warning");
+          return;
+        }
+        await currentState(active);
+        if (active.state.status === "completed") {
+          ctx.ui.notify("fleet completed, nothing to continue", "warning");
+          return;
+        }
+        if (active.state.status === "paused") {
+          ctx.ui.notify("fleet is paused; use /fleet resume for paused loop fleets", "warning");
+          return;
+        }
+        if (active.state.status === "planned" && Object.values(active.state.nodes).every((n) => n.status === "pending")) {
+          ctx.ui.notify("fleet has not started; use /fleet launch", "warning");
+          return;
+        }
+        active.killSwitch.killed = false;
+        active.pauseSwitch.paused = false;
+        active.state = { ...active.state, status: "running", paused: false };
+        await writeState(active.fleetRoot, active.state);
+        await writeWorkerPrompts(active);
+        void startLoop(active, ctx, false, true);
+        ctx.ui.notify("fleet continue requested", "info");
         return;
       }
       if (cmd === "relaunch") {
@@ -188,6 +220,7 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
         }
         active.state = resetForRelaunch(active.state, active.spec, target);
         await writeState(active.fleetRoot, active.state);
+        await writeWorkerPrompts(active);
         prepareRelaunch(active, target);
         void startLoop(active, ctx, false, true);
         ctx.ui.notify(`fleet relaunch requested for ${target}`, "info");
@@ -250,7 +283,7 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
         if (r.ok) updateWidget(ctx, active);
         return;
       }
-      ctx.ui.notify("usage: /fleet viz | /fleet status | /fleet models | /fleet canvas [stop] | /fleet configure [show|set k v] | /fleet add <json> | /fleet edit <node_id>|config ... | /fleet clear | /fleet kill all|<node_id> | /fleet pause | /fleet resume | /fleet relaunch <node_id> [model]", "warning");
+      ctx.ui.notify("usage: /fleet viz | /fleet status | /fleet models | /fleet canvas [stop] | /fleet configure [show|set k v] | /fleet add <json> | /fleet edit <node_id>|config ... | /fleet clear | /fleet kill all|<node_id> | /fleet pause | /fleet resume | /fleet continue | /fleet relaunch <node_id> [model]", "warning");
     },
   });
 }

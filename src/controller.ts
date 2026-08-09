@@ -26,6 +26,7 @@ export interface ActiveFleet {
   costWarned?: boolean;
   sessions: Map<string, AgentSessionLike>;
   killedNodes: Set<string>;
+  widgetVisible?: boolean;
 }
 
 export interface ActiveFleetCell {
@@ -35,7 +36,7 @@ export interface ActiveFleetCell {
 export const activeFleet: ActiveFleetCell = { current: undefined };
 
 export function updateWidget(ctx: ExtensionContext, fleet: ActiveFleet, spinnerFrame?: number): void {
-  if (ctx.hasUI) ctx.ui.setWidget("fleet", buildWidgetLines(fleet.spec, fleet.state, { spinnerFrame }));
+  if (ctx.hasUI && fleet.widgetVisible) ctx.ui.setWidget("fleet", buildWidgetLines(fleet.spec, fleet.state, { spinnerFrame }));
 }
 
 export function startSpinner(ctx: ExtensionContext, fleet: ActiveFleet, intervalMs = 150): () => void {

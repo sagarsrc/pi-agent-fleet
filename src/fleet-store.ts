@@ -56,7 +56,9 @@ export async function persistFleetJson(fleet: { fleetRoot: string; spec: FleetSp
 
 export async function writeWorkerPrompts(fleet: { spec: FleetSpec; state: FleetState; fleetRoot: string }): Promise<void> {
   await Promise.all(fleet.spec.workers.map(async (w) => {
+    const dir = join(fleet.fleetRoot, "workers", w.id);
+    await mkdir(dir, { recursive: true });
     const prompt = buildWorkerPrompt({ spec: fleet.spec, state: fleet.state, workerId: w.id, fleetRoot: fleet.fleetRoot });
-    await writeFile(join(fleet.fleetRoot, "workers", w.id, "prompt.md"), prompt, "utf-8");
+    await writeFile(join(dir, "prompt.md"), prompt, "utf-8");
   }));
 }
