@@ -42,7 +42,7 @@ Ask your pi session (the LLM drives the tools):
 > combiner (depends on both) writes output/sum.md with the total.
 > Each declares its output as a markdown contract.
 
-The agent calls `fleet_design` (if you describe it in prose) or `fleet_plan` (if you already have JSON), you confirm the preview, then `fleet_launch` runs it. Watch the live widget or open the browser canvas; read the report at `.fleet/<name>-<ts>/report.md`.
+The agent calls `fleet_design` (if you describe it in prose) or `fleet_plan` (if you already have JSON), you confirm the preview, then `fleet_launch` runs it. Plan and launch responses include a fleet canvas link by default; the in-chat widget is hidden until you run `/fleet viz`. Read the report at `.fleet/<name>-<ts>/report.md`.
 
 JSON pipeline variant — a numeric handoff chain where workers pass typed JSON, verified by schemas at contract check:
 
@@ -84,7 +84,7 @@ One writer emits `{"values":[3,5,8]}`, two parallel consumers add and subtract, 
 
 - `config.model` / `config.effort` — fleet-wide defaults; per-worker `model` and `effort` override.
 - `effort` maps to pi thinking levels: `off | minimal | low | medium | high | xhigh | max`.
-- `config.warn_cost_usd` — soft cost guardrail surfaced in the live widget.
+- `config.warn_cost_usd` — soft cost guardrail surfaced in the canvas and report.
 - `iterate: false` — run the node once at iteration 1 and carry its outputs forward.
 - `worktree: true` — run the node in a dedicated git worktree.
 - Worker types `research`, `code-run`, `reviewer`, `write`, `read-only` each get a tailored tool set.
@@ -138,7 +138,8 @@ Failed required contract → `contract_failed`, dependents blocked, orchestrator
 | `fleet_plan` | validate + preview a fleet definition (no launch) |
 | `fleet_models` | list available model refs (provider/id) from the live registry — call before `fleet_plan` if you don't know exact model IDs |
 | `fleet_launch` | launch the planned fleet after user confirmation; `skip_confirm` for unattended runs |
-| `fleet_status` | live DAG status and widget lines |
+| `fleet_status` | live DAG status and text summary |
+| `fleet_continue` | resume a failed/killed fleet from current state without restarting completed nodes |
 | `fleet_pause` / `fleet_resume` | pause/resume loop fleets at the next iteration boundary |
 | `fleet_kill` | kill all, or kill a single node by worker id |
 | `fleet_relaunch` | re-run a failed/killed node and its blocked downstream; optional model override |
@@ -147,7 +148,7 @@ Failed required contract → `contract_failed`, dependents blocked, orchestrator
 | `fleet_report` | regenerate the fleet markdown report |
 | `fleet_canvas` | open a browser canvas; `?demo=1` shows synthetic data for UI iteration |
 
-`/fleet viz | status | clear | pause | resume | kill all|<node_id> | relaunch <id> [model] | add <json> | edit <node_id>|config ... | configure [show|set k v] | canvas [open|url|stop]`
+`/fleet viz | status | clear | pause | resume | continue | kill all|<node_id> | relaunch <id> [model] | add <json> | edit <node_id>|config ... | configure [show|set k v] | canvas [open|url|stop]`
 
 ## Runtime mutation
 
@@ -170,7 +171,7 @@ These are merged into `fleet_plan` results. Manage them with `/fleet configure s
 
 ## Records
 
-Everything lands in `.fleet/<name>-<ts>/` (git-ignored): `state.json` (single source of truth, atomic writes), per-worker `prompt.md` + `session.jsonl` + outputs, per-iteration archives, and a machine-written `report.md` with per-worker turns/tokens/cost, contract results, verdict history, and git diff stats. Completed nodes keep their stats visible in the widget and report after the fleet ends.
+Everything lands in `.fleet/<name>-<ts>/` (git-ignored): `state.json` (single source of truth, atomic writes), per-worker `prompt.md` + `session.jsonl` + outputs, per-iteration archives, and a machine-written `report.md` with per-worker turns/tokens/cost, contract results, verdict history, and git diff stats. Completed nodes keep their stats visible in the canvas and report after the fleet ends.
 
 ## Model selection and effort
 
