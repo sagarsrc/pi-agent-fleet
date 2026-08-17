@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -34,9 +34,45 @@ describe("verifyOutputs", () => {
     expect(r.ok).toBe(false);
     expect(r.checks[0].error).toContain("no markdown heading after leading metadata line");
   });
-  it("file-exists resolves repo-relative paths", async () => {
+  it("fails file-exists for a repo-relative file untouched since notBeforeMs", async () => {
     const { workerDir, repoCwd } = await setup({ "src/login.ts": "export const x = 1;" });
-    const r = await verifyOutputs({ workerDir, repoCwd, outputs: [{ path: "src/login.ts", kind: "file-exists", required: true }] });
+    const full = join(repoCwd, "src/login.ts");
+    const old = new Date(Date.now() - 60 * 60 * 1000);
+    await utimes(full, old, old);
+    const r = await verifyOutputs({
+      workerDir,
+      repoCwd,
+      notBeforeMs: Date.now(),
+      outputs: [{ path: "src/login.ts", kind: "file-exists", required: true }],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.checks[0].error).toContain("not modified");
+  });
+  it("passes file-exists for a repo-relative file modified after notBeforeMs", async () => {
+    const { workerDir, repoCwd } = await setup({ "src/login.ts": "export const x = 1;" });
+    const full = join(repoCwd, "src/login.ts");
+    const notBeforeMs = Date.now() - 60 * 60 * 1000;
+    const now = new Date();
+    await utimes(full, now, now);
+    const r = await verifyOutputs({
+      workerDir,
+      repoCwd,
+      notBeforeMs,
+      outputs: [{ path: "src/login.ts", kind: "file-exists", required: true }],
+    });
+    expect(r.ok).toBe(true);
+  });
+  it("ignores notBeforeMs for output/ paths", async () => {
+    const { workerDir, repoCwd } = await setup({ "output/fresh.md": "hello" });
+    const full = join(workerDir, "output/fresh.md");
+    const old = new Date(Date.now() - 60 * 60 * 1000);
+    await utimes(full, old, old);
+    const r = await verifyOutputs({
+      workerDir,
+      repoCwd,
+      notBeforeMs: Date.now(),
+      outputs: [{ path: "output/fresh.md", kind: "file-exists", required: true }],
+    });
     expect(r.ok).toBe(true);
   });
   it("verdict requires verdict line and body", async () => {

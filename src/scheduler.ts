@@ -249,6 +249,7 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
           }
         }
 
+        const dispatchMs = Date.now();
         await patch(w.id, { status: "running", started_at: new Date().toISOString() });
         const p = opts.spawn(w.id).then(async (res) => {
           if (opts.killSwitch?.killed) return;
@@ -285,6 +286,7 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
             workerDir: `${fleetRoot}/workers/${w.id}`,
             repoCwd: repoCwdFor(w.id),
             outputs: w.outputs,
+            notBeforeMs: dispatchMs,
           });
           await patch(w.id, {
             status: contract.ok ? "completed" : "contract_failed",

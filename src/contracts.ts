@@ -20,7 +20,7 @@ function firstLines(content: string, n = 5): string {
     .join(" / ");
 }
 
-async function checkOne(workerDir: string, repoCwd: string, o: ContractOutput): Promise<ContractCheck> {
+async function checkOne(workerDir: string, repoCwd: string, o: ContractOutput, notBeforeMs?: number): Promise<ContractCheck> {
   const full = resolvePath(workerDir, repoCwd, o.path);
   const base: Omit<ContractCheck, "ok" | "error"> = { path: o.path, kind: o.kind, required: o.required, actualPath: full };
   const fail = (error: string): ContractCheck => ({ ...base, ok: false, error });
@@ -28,9 +28,12 @@ async function checkOne(workerDir: string, repoCwd: string, o: ContractOutput): 
   try {
     const s = await stat(full);
     if (o.kind === "file-exists") {
-      return s.size > 0
-        ? { ...base, ok: true }
-        : fail("empty file");
+      if (s.size === 0) return fail("empty file");
+      const repoRelative = !isAbsolute(o.path) && !o.path.startsWith("output/");
+      if (repoRelative && notBeforeMs !== undefined && s.mtimeMs < notBeforeMs) {
+        return fail("pre-existing repo file not modified since worker start");
+      }
+      return { ...base, ok: true };
     }
     content = await readFile(full, "utf-8");
   } catch {
@@ -99,8 +102,9 @@ export async function verifyOutputs(opts: {
   workerDir: string;
   repoCwd: string;
   outputs: ContractOutput[];
+  notBeforeMs?: number;
 }): Promise<ContractResult> {
-  const checks = await Promise.all(opts.outputs.map((o) => checkOne(opts.workerDir, opts.repoCwd, o)));
+  const checks = await Promise.all(opts.outputs.map((o) => checkOne(opts.workerDir, opts.repoCwd, o, opts.notBeforeMs)));
   const ok = checks.every((c) => !c.required || c.ok);
 
   const verdictCheck = checks.find((c) => c.kind === "verdict" && c.ok);
