@@ -42,6 +42,30 @@ describe("runFleet cost", () => {
     expect(s.nodes.a.cost_usd_estimate).toBe(0.01);
   });
 
+  it("notes when tokens were consumed but cost stayed zero (unknown pricing)", async () => {
+    const s = await runFleet({
+      spec: spec(), fleetRoot: await root(), repoCwd: "/tmp",
+      spawn: async () => ({ ok: true, turns: 2, tokens: 44000, cost: 0 }),
+    });
+    expect(s.nodes.a.status_note).toMatch(/cost .*unavailable|no pricing/i);
+  });
+
+  it("adds no note when cost is positive", async () => {
+    const s = await runFleet({
+      spec: spec(), fleetRoot: await root(), repoCwd: "/tmp",
+      spawn: async () => ({ ok: true, turns: 2, tokens: 44000, cost: 0.5 }),
+    });
+    expect(s.nodes.a.status_note).toBeUndefined();
+  });
+
+  it("adds no note when tokens are zero", async () => {
+    const s = await runFleet({
+      spec: spec(), fleetRoot: await root(), repoCwd: "/tmp",
+      spawn: async () => ({ ok: true, turns: 2, tokens: 0, cost: 0 }),
+    });
+    expect(s.nodes.a.status_note).toBeUndefined();
+  });
+
   it("loop with run-once node counts its cost exactly once", async () => {
     const loopSpec: FleetSpec = {
       fleet_name: "loop-once",

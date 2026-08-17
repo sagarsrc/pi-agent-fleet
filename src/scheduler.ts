@@ -288,6 +288,8 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
             outputs: w.outputs,
             notBeforeMs: dispatchMs,
           });
+          const costUnknown = res.tokens > 0 && res.cost === 0;
+          const costNote = costUnknown ? `cost unavailable: no pricing for model (${res.tokens} tokens used)` : undefined;
           await patch(w.id, {
             status: contract.ok ? "completed" : "contract_failed",
             ended_at: new Date().toISOString(),
@@ -296,7 +298,7 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
             cost_usd_estimate: res.cost ?? 0,
             contract_result: contract,
             produced_outputs: contract.checks.filter((c) => c.ok || c.actualPath).map((c) => c.path),
-            status_note: contract.ok ? undefined : contractFailureNote(contract.checks),
+            status_note: contract.ok ? costNote : [contractFailureNote(contract.checks), costNote].filter(Boolean).join(" · "),
           });
           if (contract.ok) {
             const note = await opts.onNodeCompleted?.(w.id);
