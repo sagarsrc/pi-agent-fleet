@@ -17,3 +17,14 @@
 
 ## Later (parked minors from reviews)
 - noUnusedLocals in tsconfig; atomic writeJsonAtomic shared helper; planner cost guardrails; growth cap (max_workers) for recursive node requests; sideband rename-after-consume for loop fleets
+
+## Issue fixes (gh #1 #2) — branch fix/gh-issues-1-2
+1. ✅ autonomy preamble in worker prompts (bug 1)
+2. ✅ relaunch queued into running scheduler + wind-down drain (bug 2)
+3. ✅ blocked nodes editable + killable (bug 3)
+4. ✅ file-exists freshness for repo-relative paths (bug 4)
+5. ✅ unknown-pricing zero-cost status note (bug 5)
+6. ✅ canvas TD layered layout (item 2)
+7. ✅ canvas copyable errors + tucked instructions + dense cards (items 1,3,4)
+8. ✅ live smoke: headless mini fleet, relaunch-while-running + blocked-edit green
+9. ✅ readDiskFleet bare-root fallback (ENOENT-only) carried from WIP
