@@ -106,6 +106,20 @@ describe("killFleet node targets", () => {
     }
   });
 
+  it("kills a blocked node directly when the fleet is not running", async () => {
+    const fleet = await plannedFleet();
+    fleet.state = patchNode(fleet.fleetRoot, fleet.state, "a", { status: "blocked" });
+    await writeState(fleet.fleetRoot, fleet.state);
+    activeFleet.current = fleet;
+    try {
+      const msg = await killFleet("a");
+      expect(msg).toBe('node "a" killed');
+      expect(fleet.state.nodes.a.status).toBe("killed");
+    } finally {
+      activeFleet.current = undefined;
+    }
+  });
+
   it("rejects unknown nodes and terminal nodes", async () => {
     const fleet = await plannedFleet();
     activeFleet.current = fleet;

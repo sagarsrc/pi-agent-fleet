@@ -335,7 +335,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "fleet_edit",
     label: "Fleet Edit",
-    description: "Edit the active fleet: a pending or relaunchable node's model, effort, or task — or fleet config (max_concurrent, warn_cost_usd, model, effort) when node_id is omitted. Changes persist to fleet.json and apply immediately. Edits to running, completed, or blocked nodes are refused; failed, contract_failed, and killed nodes can be edited so relaunch uses the updated task.",
+    description: "Edit the active fleet: a pending or relaunchable node's model, effort, or task — or fleet config (max_concurrent, warn_cost_usd, model, effort) when node_id is omitted. Changes persist to fleet.json and apply immediately. Edits to running or completed nodes are refused; pending, blocked, failed, contract_failed, and killed nodes can be edited (blocked nodes have not started — nothing to invalidate).",
     promptSnippet: "Edit a pending fleet node or fleet config.",
     parameters: Type.Object({
       node_id: Type.Optional(Type.String({ description: "Worker id to edit; omit for fleet config edits" })),

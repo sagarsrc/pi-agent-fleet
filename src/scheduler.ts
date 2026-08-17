@@ -170,6 +170,15 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
         }
         break;
       }
+      // honor kill requests for not-yet-running nodes (incl. blocked, issue #1 bug 3)
+      for (const w of spec.workers) {
+        const n = state.nodes[w.id];
+        if (!n) continue;
+        if (!opts.nodeKills?.has(w.id)) continue;
+        if (n.status === "pending" || n.status === "ready" || n.status === "blocked") {
+          await patch(w.id, { status: "killed", ended_at: new Date().toISOString() });
+        }
+      }
       // dispatch ready
       const activeCount = running.size;
       let slots = spec.config.max_concurrent - activeCount;

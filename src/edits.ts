@@ -15,7 +15,7 @@ export interface EditResult {
   message: string;
 }
 
-const EDITABLE_NODE_STATUSES: ReadonlySet<NodeStatus> = new Set(["pending", "ready", "failed", "contract_failed", "killed"]);
+const EDITABLE_NODE_STATUSES: ReadonlySet<NodeStatus> = new Set(["pending", "ready", "failed", "contract_failed", "killed", "blocked"]);
 
 export async function editNode(
   fleet: ActiveFleet,
@@ -28,8 +28,8 @@ export async function editNode(
   const node = fleet.state.nodes[nodeId];
   if (!worker || !node) return { ok: false, message: `unknown node "${nodeId}"` };
   if (!EDITABLE_NODE_STATUSES.has(node.status)) {
-      return { ok: false, message: `node "${nodeId}" is ${node.status}; only pending, failed, contract_failed, or killed nodes can be edited` };
-    }
+    return { ok: false, message: `node "${nodeId}" is ${node.status}; only pending, blocked, failed, contract_failed, or killed nodes can be edited` };
+  }
   switch (key) {
     case "model": {
       const r = resolveModelReference(registry, value);

@@ -66,6 +66,14 @@ describe("editNode", () => {
     expect(prompt).toContain("fixed task after failure");
   });
 
+  it("allows task edit on a blocked node", async () => {
+    const fleet = await fleetAt("pending");
+    fleet.state.nodes.a = { ...fleet.state.nodes.a, status: "blocked" };
+    const r = await editNode(fleet, "a", "task", "fixed task before relaunch", registry);
+    expect(r.ok).toBe(true);
+    expect(fleet.spec.workers[0].task).toBe("fixed task before relaunch");
+  });
+
   it("rejects unknown nodes, unknown keys, and bad values", async () => {
     const fleet = await fleetAt("pending");
     expect((await editNode(fleet, "zzz", "model", "k3", registry)).ok).toBe(false);

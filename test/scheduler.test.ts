@@ -132,6 +132,27 @@ describe("runFleet", () => {
     expect(spawned).not.toContain("a");
   });
 
+  it("kills a blocked node at next scheduler pass while running", async () => {
+    const sp = spec();
+    const fleetRoot = await root();
+    const resumeFrom = patchNode(
+      fleetRoot,
+      patchNode(fleetRoot, initFleetState(sp), "a", { status: "completed" }),
+      "b",
+      { status: "blocked" },
+    );
+    const s = await runFleet({
+      spec: sp,
+      fleetRoot,
+      repoCwd: "/tmp",
+      spawn: async () => ({ ok: true, turns: 1, tokens: 10 }),
+      nodeKills: new Set(["b"]),
+      resumeFrom,
+      continuePass: true,
+    });
+    expect(s.nodes.b.status).toBe("killed");
+  });
+
   it("running node killed mid-run ends killed even when spawn succeeds", async () => {
     const kills = new Set<string>();
     const s = await runFleet({

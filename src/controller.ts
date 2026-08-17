@@ -338,7 +338,7 @@ export async function killFleet(target: string, cwd?: string): Promise<string> {
   const worker = active.spec.workers.find((w) => w.id === target);
   const node = active.state.nodes[target];
   if (!worker || !node) return `unknown node "${target}"`;
-  if (TERMINAL_NODE_STATUSES.has(node.status)) return `node "${target}" already ${node.status}`;
+  if (TERMINAL_NODE_STATUSES.has(node.status) && node.status !== "blocked") return `node "${target}" already ${node.status}`;
   active.killedNodes.add(target);
   const session = active.sessions.get(target);
   if (session) {
