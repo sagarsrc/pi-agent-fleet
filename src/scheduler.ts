@@ -306,8 +306,14 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
     await Promise.allSettled([...running]);
   };
 
+  const runPassUntilDrained = async () => {
+    do {
+      await runPass();
+    } while (opts.relaunchRequests && opts.relaunchRequests.size > 0);
+  };
+
   if (!loop) {
-    await runPass();
+    await runPassUntilDrained();
     const anyFailed = spec.workers.some((w) =>
       ["failed", "contract_failed"].includes(state.nodes[w.id]?.status ?? ""));
     const finalStatus = opts.killSwitch?.killed ? "killed" : anyFailed ? "failed" : "completed";
@@ -337,7 +343,7 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
 
     await opts.prepareIteration?.(n, state);
 
-    await runPass();
+    await runPassUntilDrained();
 
     let verdict: Verdict | null = null;
     let verdictBody: string | null = null;

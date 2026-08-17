@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { runFleet } from "../src/scheduler.js";
 import { relaunchResetIds, resetForRelaunch } from "../src/state.js";
 import type { FleetSpec, FleetState } from "../src/types.js";
@@ -118,6 +118,85 @@ describe("runFleet relaunch", () => {
     expect(final.status).toBe("completed");
     expect(final.nodes.a.status).toBe("completed");
     expect(final.nodes.slow.status).toBe("completed");
+  });
+
+  it("drains relaunch requests queued while scheduler was winding down", async () => {
+    const spec: FleetSpec = {
+      fleet_name: "wind-down-contract",
+      type: "dag",
+      config: { max_concurrent: 2 },
+      workers: [
+        { id: "a", type: "write", task: "t", depends_on: [], outputs: [{ path: "output/a.md", kind: "markdown", required: true }] },
+        { id: "b", type: "write", task: "t", depends_on: [], outputs: [] },
+      ],
+    };
+    const fleetRoot = await root(spec);
+    const counts: Record<string, number> = {};
+    const relaunchRequests = new Set<string>();
+    const slow = deferred();
+    let aContractFailed = false;
+    let bCompleted = false;
+    let queued = false;
+    let resolveQueued = () => {};
+    const queuedPromise = new Promise<void>((resolve) => {
+      resolveQueued = resolve;
+    });
+
+    const originalAllSettled = Promise.allSettled.bind(Promise);
+    const allSettledSpy = vi.spyOn(Promise, "allSettled").mockImplementation(async (values) => {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      return originalAllSettled(values);
+    });
+
+    let final!: FleetState;
+    try {
+      const finalPromise = runFleet({
+        spec,
+        fleetRoot,
+        repoCwd: "/tmp",
+        relaunchRequests,
+        onNodeChange: (id, s) => {
+          if (id === "a" && s.status === "contract_failed" && !aContractFailed) {
+            aContractFailed = true;
+            slow.resolve();
+          }
+          if (id === "b" && s.status === "completed" && aContractFailed && !queued) {
+            bCompleted = true;
+            setImmediate(() => {
+              queued = true;
+              relaunchRequests.add("a");
+              resolveQueued();
+            });
+          }
+        },
+        spawn: async (id) => {
+          counts[id] = (counts[id] ?? 0) + 1;
+          if (id === "a") {
+            if (counts[id] === 1) return { ok: true, turns: 1, tokens: 5 };
+            await writeFile(join(fleetRoot, "workers", "a", "output", "a.md"), "# A\n", "utf-8");
+            return { ok: true, turns: 1, tokens: 5 };
+          }
+          if (id === "b") {
+            await slow.promise;
+            return { ok: true, turns: 1, tokens: 5 };
+          }
+          throw new Error(`unexpected spawn ${id}`);
+        },
+      });
+
+      await queuedPromise;
+      final = await finalPromise;
+    } finally {
+      allSettledSpy.mockRestore();
+    }
+
+    expect(aContractFailed).toBe(true);
+    expect(bCompleted).toBe(true);
+    expect(queued).toBe(true);
+    expect(counts).toEqual({ a: 2, b: 1 });
+    expect(final.status).toBe("completed");
+    expect(final.nodes.a.status).toBe("completed");
+    expect(final.nodes.b.status).toBe("completed");
   });
 
   it("relaunch of a failed upstream resets blocked downstream to pending", async () => {
