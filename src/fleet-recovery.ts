@@ -18,7 +18,9 @@ export async function readDiskFleet(fleetRoot: string): Promise<ActiveFleet> {
   let state: FleetState;
   try {
     state = await readState(fleetRoot);
-  } catch {
+  } catch (e: unknown) {
+    const err = e as { code?: string };
+    if (err.code !== "ENOENT") throw e;
     state = initFleetState(spec);
   }
   return {

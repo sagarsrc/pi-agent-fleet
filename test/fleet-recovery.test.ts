@@ -104,4 +104,11 @@ describe("readDiskFleet + listFleetRoots (moved from canvas)", () => {
     expect(fleet.state.status).toBe("planned");
     expect(Object.keys(fleet.state.nodes)).toEqual(minimalSpec.workers.map((w) => w.id));
   });
+
+  it("throws for corrupt state.json even when fleet.json exists", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fleet-corrupt-"));
+    await writeFile(join(root, "fleet.json"), JSON.stringify(minimalSpec), "utf-8");
+    await writeFile(join(root, "state.json"), "{}", "utf-8");
+    await expect(readDiskFleet(root)).rejects.toThrow();
+  });
 });
