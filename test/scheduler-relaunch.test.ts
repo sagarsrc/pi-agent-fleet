@@ -222,10 +222,10 @@ describe("runFleet relaunch", () => {
       repoCwd: "/tmp",
       relaunchRequests,
       onNodeChange: (id, s) => {
+        if (id === "root" && s.status === "failed") slow.resolve();
         if (id === "mid" && s.status === "blocked" && !queued) {
           queued = true;
           relaunchRequests.add("root");
-          slow.resolve();
         }
       },
       spawn: async (id) => {
