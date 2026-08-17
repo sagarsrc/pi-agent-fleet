@@ -11,6 +11,14 @@ describe("excerptText", () => {
   it("passes short text through", () => {
     expect(excerptText("short", 240)).toEqual({ excerpt: "short", truncated: false });
   });
+
+  it("does not truncate when text length equals limit", () => {
+    expect(excerptText("x".repeat(240), 240)).toEqual({ excerpt: "x".repeat(240), truncated: false });
+  });
+
+  it("handles empty text", () => {
+    expect(excerptText("", 240)).toEqual({ excerpt: "", truncated: false });
+  });
 });
 
 describe("computePositions", () => {

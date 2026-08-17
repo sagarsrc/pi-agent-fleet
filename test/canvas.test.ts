@@ -102,7 +102,7 @@ describe("renderCanvasPage", () => {
   it("ships selectable error CSS, nodrag hooks, tucked instructions, dense timeline toggles", async () => {
     const html = await renderCanvasPage();
     expect(html).toContain("user-select:text");
-    expect(html).toContain("nodrag");
+    expect(html).toContain("note nodrag");
     expect(html).toContain("Instructions (task prompt)");
     expect(html).toContain("show more");
     expect(html).toContain("show less");
