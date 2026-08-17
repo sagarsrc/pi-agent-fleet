@@ -17,6 +17,17 @@ export function buildWorkerPrompt(opts: {
   const dependents = getDependents(spec, workerId);
   const out: string[] = [];
 
+  out.push(
+    "## Autonomy contract (read first)",
+    "",
+    "You are an unattended fleet worker — there is no human watching this session and nobody will answer questions.",
+    "- Everything in this prompt is PRE-APPROVED. Do not ask for approval; do the work.",
+    "- Do NOT invoke any skill or workflow with a human approval gate (e.g. brainstorming hard-gates). Skip gated steps and execute the task directly.",
+    "- Do not end your turn with a question, a plan awaiting approval, or an 'Approve?' prompt. End your turn only when every REQUIRED output below exists on disk.",
+    "- Ambiguity is yours to resolve: decide, record the decision in your output, and continue.",
+    "",
+  );
+
   const fleetTs = basename(fleetRoot);
 
   out.push(`# Fleet worker: ${workerId}`, "", `Type: ${worker.type}`, "", `## Task`, "", worker.task, "");

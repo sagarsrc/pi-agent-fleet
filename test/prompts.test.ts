@@ -31,6 +31,21 @@ describe("buildWorkerPrompt", () => {
     expect(p).toContain("Write code changes directly at their repo paths");
     expect(p).not.toContain("/f/workers/build/output/ — use absolute paths");
   });
+  it("prepends an autonomy contract before the task section", () => {
+    const p = buildWorkerPrompt({ spec, state, workerId: "research", fleetRoot: "/f" });
+    const auto = p.indexOf("## Autonomy contract");
+    const task = p.indexOf("## Task");
+    expect(auto).toBeGreaterThanOrEqual(0);
+    expect(task).toBeGreaterThan(auto);
+  });
+
+  it("autonomy contract forbids approval gates and open questions", () => {
+    const p = buildWorkerPrompt({ spec, state, workerId: "research", fleetRoot: "/f" });
+    expect(p).toContain("PRE-APPROVED");
+    expect(p).toContain("no human");
+    expect(p).toContain("Do not end your turn with a question");
+  });
+
   it("documents the node-requests sideband contract", () => {
     const prompt = buildWorkerPrompt({ spec, state, workerId: "research", fleetRoot: "/fr" });
     expect(prompt).toContain("node-requests.json");
