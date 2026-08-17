@@ -16,6 +16,7 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import type { Edge, Node, NodeProps } from "@xyflow/react";
+import { computePositions, NODE_W } from "./canvas-layout.js";
 
 /* ---------- payload types (mirror canvas.ts) ---------- */
 interface CanvasNodeView {
@@ -76,7 +77,6 @@ type TimelineEvent =
 interface SessionResp { entries: SessionEntry[]; actions: ActionView[]; events: TimelineEvent[]; task?: string }
 
 /* ---------- helpers ---------- */
-const NODE_W = 284;
 function statusClass(s: string): string {
   return "st-" + s.replace(/\s+/g, "_");
 }
@@ -95,47 +95,6 @@ function j<T>(u: string): Promise<T> {
     if (!r.ok) throw new Error(String(r.status));
     return r.json() as Promise<T>;
   });
-}
-
-/* topo-layer layout, ported from the legacy canvas */
-function topoLayers(nodes: CanvasNodeView[], edges: Array<{ from: string; to: string }>): string[][] {
-  const ids = nodes.map((n) => n.id);
-  const indeg: Record<string, number> = {};
-  const rev: Record<string, string[]> = {};
-  ids.forEach((i) => { indeg[i] = 0; rev[i] = []; });
-  edges.forEach((e) => { if (e.from in indeg) { indeg[e.to]++; rev[e.from].push(e.to); } });
-  const layers: string[][] = [];
-  let cur = ids.filter((i) => indeg[i] === 0);
-  const seen: Record<string, boolean> = {};
-  while (cur.length) {
-    layers.push(cur);
-    cur.forEach((i) => { seen[i] = true; });
-    const next: string[] = [];
-    cur.forEach((i) => rev[i].forEach((m) => { if (--indeg[m] === 0) next.push(m); }));
-    cur = next;
-  }
-  ids.forEach((i) => { if (!seen[i]) { layers.push([i]); seen[i] = true; } });
-  return layers;
-}
-function median(arr: number[]): number {
-  const s = arr.slice().sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-}
-function reduceCrossings(layers: string[][], edges: Array<{ from: string; to: string }>): string[][] {
-  for (let li = 1; li < layers.length; li++) {
-    const prevPos: Record<string, number> = {};
-    layers[li - 1].forEach((id, i) => { prevPos[id] = i; });
-    const key = (id: string) => median(edges.filter((e) => e.to === id).map((e) => prevPos[e.from] ?? 0));
-    layers[li].sort((a, b) => key(a) - key(b));
-  }
-  return layers;
-}
-function computePositions(p: CanvasPayload): Record<string, { x: number; y: number }> {
-  const layers = reduceCrossings(topoLayers(p.nodes, p.edges), p.edges);
-  const pos: Record<string, { x: number; y: number }> = {};
-  layers.forEach((layer, li) => layer.forEach((id, ni) => { pos[id] = { x: li * 360, y: ni * 170 }; }));
-  return pos;
 }
 
 /* ---------- custom node ---------- */
@@ -179,8 +138,8 @@ function FleetNode({ data }: NodeProps<Node<FleetNodeData>>) {
       onClick={activate}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(); } }}
     >
-      <Handle type="target" position={Position.Left} />
-      <Handle type="target" position={Position.Bottom} id="loopIn" />
+      <Handle type="target" position={Position.Top} />
+      <Handle type="target" position={Position.Top} id="loopIn" />
       <div className="card-body">
         <div className="node-header">
           <span className={"node-dot" + (running ? " pulse" : "")} style={{ background: minimapColor(n.status) }} aria-hidden="true" />
@@ -213,7 +172,7 @@ function FleetNode({ data }: NodeProps<Node<FleetNodeData>>) {
         {n.status_note && <div className="note">{n.status_note}</div>}
         {failReason && <div className="fail-reason">{failReason}</div>}
       </div>
-      <Handle type="source" position={Position.Right} />
+      <Handle type="source" position={Position.Bottom} />
       <Handle type="source" position={Position.Bottom} id="loop" />
     </div>
   );
@@ -602,7 +561,7 @@ function Flow() {
   // so drag positions and measured sizes (needed by the minimap) survive polling.
   useEffect(() => {
     if (!payload) { setNodes([]); return; }
-    const pos = computePositions(payload);
+    const pos = computePositions(payload.nodes, payload.edges);
     const gateId = payload.loop
       ? (payload.nodes.find((n) => n.id === payload.loop!.gate) ?? payload.nodes.find((n) => n.type === payload.loop!.gate))?.id
       : undefined;
