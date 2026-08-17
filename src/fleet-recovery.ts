@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { ActiveFleet } from "./controller.js";
-import { readState } from "./state.js";
+import { initFleetState, readState } from "./state.js";
 import type { FleetSpec, FleetState } from "./types.js";
 
 export interface FleetRootInfo {
@@ -13,7 +13,14 @@ export interface FleetRootInfo {
 
 export async function readDiskFleet(fleetRoot: string): Promise<ActiveFleet> {
   const spec = JSON.parse(await readFile(join(fleetRoot, "fleet.json"), "utf-8")) as FleetSpec;
-  const state = await readState(fleetRoot);
+  // Bare fleet.json-only root (e.g. hand-copied spec, never planned/launched):
+  // synthesize a fresh pending state so the canvas can still render the DAG.
+  let state: FleetState;
+  try {
+    state = await readState(fleetRoot);
+  } catch {
+    state = initFleetState(spec);
+  }
   return {
     spec,
     fleetRoot,

@@ -96,4 +96,12 @@ describe("readDiskFleet + listFleetRoots (moved from canvas)", () => {
     expect(f.spec.fleet_name).toBe("demo");
     expect(f.state.status).toBe("planned");
   });
+
+  it("synthesizes a pending state for a bare fleet.json-only root", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fleet-bare-"));
+    await writeFile(join(root, "fleet.json"), JSON.stringify(minimalSpec), "utf-8");
+    const fleet = await readDiskFleet(root);
+    expect(fleet.state.status).toBe("planned");
+    expect(Object.keys(fleet.state.nodes)).toEqual(minimalSpec.workers.map((w) => w.id));
+  });
 });
