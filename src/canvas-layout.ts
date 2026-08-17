@@ -2,6 +2,11 @@ export const NODE_W = 284;
 export const NODE_H_GAP = 200;
 export const NODE_W_GAP = 40;
 
+export function excerptText(text: string, max: number): { excerpt: string; truncated: boolean } {
+  const truncated = text.length > max;
+  return { excerpt: truncated ? text.slice(0, max) + "…" : text, truncated };
+}
+
 export function topoLayers(ids: string[], edges: Array<{ from: string; to: string }>): string[][] {
   const indeg: Record<string, number> = {};
   const nextById: Record<string, string[]> = {};

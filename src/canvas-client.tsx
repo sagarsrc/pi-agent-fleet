@@ -16,7 +16,7 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import type { Edge, Node, NodeProps } from "@xyflow/react";
-import { computePositions, NODE_W } from "./canvas-layout.js";
+import { computePositions, excerptText, NODE_W } from "./canvas-layout.js";
 
 /* ---------- payload types (mirror canvas.ts) ---------- */
 interface CanvasNodeView {
@@ -169,8 +169,8 @@ function FleetNode({ data }: NodeProps<Node<FleetNodeData>>) {
             ))}
           </div>
         )}
-        {n.status_note && <div className="note">{n.status_note}</div>}
-        {failReason && <div className="fail-reason">{failReason}</div>}
+        {n.status_note && <div className="note nodrag">{n.status_note}</div>}
+        {failReason && <div className="fail-reason nodrag">{failReason}</div>}
       </div>
       <Handle type="source" position={Position.Bottom} />
       <Handle type="source" position={Position.Bottom} id="loop" />
@@ -181,7 +181,7 @@ const nodeTypes = { fleet: FleetNode };
 
 /* ---------- side panel ---------- */
 function CollapsiblePrompt({ title, text }: { title: string; text: string }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   if (!text) return null;
   return (
     <div className={"collapsible" + (open ? "" : " collapsed")}>
@@ -206,15 +206,23 @@ function formatActionDetail(a: { arguments?: Record<string, unknown> }): string 
 
 function TimelineItem({ event }: { event: TimelineEvent }) {
   const [open, setOpen] = useState(event.isError ? true : false);
+  const [expanded, setExpanded] = useState(false);
   const ts = event.timestamp ? new Date(event.timestamp).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
   if (event.type === "message") {
+    const { excerpt, truncated } = excerptText(event.text, 240);
+    const text = truncated && !expanded ? excerpt : event.text;
     return (
       <div className={"timeline-msg" + (event.role === "assistant" ? " assistant" : event.role === "user" ? " user" : "")}>
         <div className="timeline-meta">
           <span className="role">{event.role}</span>
           {ts && <span className="ts">{ts}</span>}
         </div>
-        <div className="timeline-text">{event.text}</div>
+        <div className="timeline-text">{text}</div>
+        {truncated && (
+          <button className="timeline-more" onClick={() => setExpanded((v) => !v)}>
+            {expanded ? "show less" : "show more"}
+          </button>
+        )}
       </div>
     );
   }
@@ -369,12 +377,12 @@ function SidePanel({ fleet, demo, selected, task, onClose }: { fleet: string | n
         )}
       </div>
       <div className="side-body" ref={boxRef} tabIndex={-1}>
-        <CollapsiblePrompt title="Instructions" text={resp?.task || task || ""} />
         {resp === null ? (
           <div className="timeline-loading"><span className="spinner" aria-hidden="true" /> Loading session…</div>
         ) : (
           <Timeline events={resp.events ?? []} />
         )}
+        <CollapsiblePrompt title="Instructions (task prompt)" text={resp?.task || task || ""} />
       </div>
     </div>
   );

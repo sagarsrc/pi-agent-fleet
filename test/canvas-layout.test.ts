@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { computePositions } from "../src/canvas-layout.js";
+import { computePositions, excerptText } from "../src/canvas-layout.js";
+
+describe("excerptText", () => {
+  it("truncates long text with ellipsis marker", () => {
+    const r = excerptText("x".repeat(500), 240);
+    expect(r.truncated).toBe(true);
+    expect(r.excerpt.length).toBeLessThanOrEqual(241);
+  });
+
+  it("passes short text through", () => {
+    expect(excerptText("short", 240)).toEqual({ excerpt: "short", truncated: false });
+  });
+});
 
 describe("computePositions", () => {
   const ids = ["A", "B", "C", "D", "E"];

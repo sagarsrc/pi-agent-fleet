@@ -98,6 +98,15 @@ describe("renderCanvasPage", () => {
     expect(html).not.toContain("<script src");
     expect(html).not.toContain("<link ");
   });
+
+  it("ships selectable error CSS, nodrag hooks, tucked instructions, dense timeline toggles", async () => {
+    const html = await renderCanvasPage();
+    expect(html).toContain("user-select:text");
+    expect(html).toContain("nodrag");
+    expect(html).toContain("Instructions (task prompt)");
+    expect(html).toContain("show more");
+    expect(html).toContain("show less");
+  });
 });
 
 describe("startCanvasServer", () => {

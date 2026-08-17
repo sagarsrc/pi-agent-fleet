@@ -628,7 +628,7 @@ async function buildClientBundle(): Promise<string> {
     platform: "browser",
     target: "es2020",
     jsx: "automatic",
-    minify: true,
+    minify: false,
     write: false,
     logLevel: "silent",
     define: { "process.env.NODE_ENV": '"production"' },
@@ -726,6 +726,7 @@ main { display:flex; flex:1 1 auto; min-height:0; }
 .flags { margin-top:6px; font-size:11px; color:var(--warn); }
 .flags span { cursor:help; }
 .note { margin-top:6px; font-size:13px; color:var(--warn); }
+.note, .fail-reason { user-select:text; cursor:text; }
 #side { width:420px; flex:0 0 auto; border-left:1px solid var(--line); overflow:hidden; display:flex; flex-direction:column; background:var(--bg); }
 #side:focus, #side:focus-visible { outline:none; }
 .side-head { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; flex-shrink:0; gap:6px; padding:12px 12px 8px; border-bottom:1px solid var(--line); background:var(--bg); }
@@ -756,19 +757,21 @@ main { display:flex; flex:1 1 auto; min-height:0; }
 .timeline-row .action-detail { flex:1; min-width:0; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
 .timeline-row .action-error { color:var(--bad); }
 .timeline-row .ts { flex-shrink:0; color:var(--wire); font-size:11px; font-variant-numeric:tabular-nums; }
-.timeline-msg { padding:8px; margin-bottom:6px; border-radius:5px; background:var(--panel); font-size:13px; }
+.timeline-msg { padding:4px 8px; margin-bottom:6px; border-radius:5px; background:var(--panel); font-size:13px; }
 .timeline-msg.user { border-left:1px solid var(--accent); background:color-mix(in srgb, var(--accent) 5%, var(--panel)); }
 .timeline-msg.assistant { border-left:1px solid var(--ok); background:color-mix(in srgb, var(--ok) 5%, var(--panel)); }
 .timeline-msg .role { font-weight:700; margin-bottom:4px; }
 .timeline-msg .timeline-meta { display:flex; justify-content:space-between; align-items:center; margin-bottom:3px; }
 .timeline-msg .timeline-meta .ts { color:var(--wire); font-size:11px; }
-.timeline-msg .timeline-text { white-space:pre-wrap; word-break:break-word; }
+.timeline-msg .timeline-text { font-size:12px; line-height:1.45; white-space:pre-wrap; word-break:break-word; user-select:text; }
 .timeline-loading { display:flex; align-items:center; justify-content:center; gap:8px; padding:16px 8px; color:var(--muted); font-size:13px; }
 .timeline-empty { padding:16px 8px; color:var(--muted); font-size:13px; text-align:center; }
 .activity-toggle { flex-shrink:0; width:18px; height:18px; padding:0; background:transparent; border:1px solid var(--line); border-radius:4px; color:var(--muted); cursor:pointer; font-size:11px; line-height:1; }
 .activity-toggle:hover { background:var(--bg); color:var(--fg); }
-.activity-body { padding:8px; border-top:1px solid var(--line); font-size:12px; color:var(--muted); font-family:var(--mono); white-space:pre-wrap; word-break:break-word; }
+.activity-body { padding:8px; border-top:1px solid var(--line); font-size:12px; color:var(--muted); font-family:var(--mono); white-space:pre-wrap; word-break:break-word; user-select:text; }
 .activity-body pre { margin:0; background:var(--bg); padding:8px; border-radius:4px; overflow:auto; font-size:11px; }
+.timeline-more { margin-top:4px; padding:0; min-height:auto; border:none; background:none; color:var(--accent); font-size:11px; }
+.timeline-more:hover { text-decoration:underline; }
 .react-flow__minimap-node.st-completed { fill:var(--ok); }
 .react-flow__minimap-node.st-running { fill:var(--accent); }
 .react-flow__minimap-node.st-failed, .react-flow__minimap-node.st-contract_failed { fill:var(--bad); }
@@ -812,6 +815,7 @@ button.toggled { border-color:var(--accent); color:var(--accent); }
 .empty-cta:hover { background:var(--panel); }
 /* failure reason surfaced on failed cards */
 .fail-reason { margin-top:6px; font-size:13px; color:var(--bad); }
+.action-detail { user-select:text; }
 /* respect reduced-motion: keep the state, drop the perpetual movement */
 @media (prefers-reduced-motion: reduce) {
   .spinner { animation:none; border-top-color:var(--accent); opacity:0.6; }
