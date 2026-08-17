@@ -51,6 +51,7 @@ async function failedFleet(): Promise<ActiveFleet> {
     running: false,
     sessions: new Map(),
     killedNodes: new Set(),
+    relaunchRequests: new Set(),
   };
   activeFleet.current = fleet;
   return fleet;

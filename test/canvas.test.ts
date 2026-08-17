@@ -30,7 +30,7 @@ function fleet(): ActiveFleet {
   return {
     spec, fleetRoot: "/x", state,
     killSwitch: { killed: false }, pauseSwitch: { paused: false },
-    running: true, sessions: new Map(), killedNodes: new Set(),
+    running: true, sessions: new Map(), killedNodes: new Set(), relaunchRequests: new Set(),
   };
 }
 

@@ -2,14 +2,14 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { writeWorkerPrompts } from "./fleet-store.js";
+import { persistFleetJson, writeWorkerPrompts } from "./fleet-store.js";
 import { recoverLatestFleet } from "./fleet-recovery.js";
 import { resolveModelReference, type ModelRegistryLike } from "./model-resolution.js";
 import { insertWorkers } from "./insert.js";
 import { writeReport } from "./report.js";
 import { runWorker, sessionFactoryForModel, workerWithResolvedModel, type AgentSessionLike } from "./runner.js";
 import { runFleet } from "./scheduler.js";
-import { patchNode, readState, writeState } from "./state.js";
+import { patchNode, readState, resetForRelaunch, writeState } from "./state.js";
 import type { FleetSpec, FleetState } from "./types.js";
 import { TERMINAL_NODE_STATUSES } from "./types.js";
 import { buildWidgetLines } from "./ui.js";
@@ -26,6 +26,7 @@ export interface ActiveFleet {
   costWarned?: boolean;
   sessions: Map<string, AgentSessionLike>;
   killedNodes: Set<string>;
+  relaunchRequests: Set<string>;
   widgetVisible?: boolean;
 }
 
@@ -87,6 +88,48 @@ export function prepareRelaunch(fleet: ActiveFleet, nodeId: string): void {
   fleet.killedNodes.delete(nodeId);
   fleet.killSwitch.killed = false;
   fleet.pauseSwitch.paused = false;
+}
+
+export interface RelaunchRequestResult {
+  message: string;
+  startNow: boolean;
+}
+
+export async function requestRelaunch(
+  fleet: ActiveFleet,
+  nodeId: string,
+  model: string | undefined,
+  registry: ModelRegistryLike,
+): Promise<RelaunchRequestResult> {
+  const worker = fleet.spec.workers.find((w) => w.id === nodeId);
+  if (!worker) return { message: `unknown node "${nodeId}"`, startNow: false };
+  const node = fleet.state.nodes[nodeId];
+  const relaunchable: ReadonlySet<string> = new Set(["failed", "contract_failed", "killed"]);
+  if (!node || !relaunchable.has(node.status)) {
+    return {
+      message: `node "${nodeId}" status ${node?.status ?? "missing"} cannot be relaunched; must be failed, contract_failed, or killed`,
+      startNow: false,
+    };
+  }
+  if (model) {
+    const resolved = resolveModelReference(registry, model);
+    if (!resolved.ok) return { message: resolved.error, startNow: false };
+    const canonical = `${resolved.model.provider}/${resolved.model.id}`;
+    fleet.spec.workers = fleet.spec.workers.map((w) => (w.id === nodeId ? { ...w, model: canonical } : w));
+    await persistFleetJson(fleet);
+  }
+  prepareRelaunch(fleet, nodeId);
+  if (fleet.running) {
+    fleet.relaunchRequests.add(nodeId);
+    return {
+      message: `relaunch queued for ${nodeId} (fleet running; dispatches on next scheduler pass)`,
+      startNow: false,
+    };
+  }
+  fleet.state = resetForRelaunch(fleet.state, fleet.spec, nodeId);
+  await writeState(fleet.fleetRoot, fleet.state);
+  await writeWorkerPrompts(fleet);
+  return { message: `fleet relaunch requested for ${nodeId}`, startNow: true };
 }
 
 export function registerNodeSession(fleet: ActiveFleet, nodeId: string, session: AgentSessionLike): void {
@@ -223,6 +266,7 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
       killSwitch: fleet.killSwitch,
       pauseSwitch: fleet.pauseSwitch,
       nodeKills: fleet.killedNodes,
+      relaunchRequests: fleet.relaunchRequests,
       onNodeChange: (nodeId, nodeState) => {
         fleet.state = fleet.state.nodes[nodeId]
           ? patchNode(fleet.fleetRoot, fleet.state, nodeId, nodeState)

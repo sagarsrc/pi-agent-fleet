@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { runFleet } from "../src/scheduler.js";
-import { resetForRelaunch } from "../src/state.js";
+import { relaunchResetIds, resetForRelaunch } from "../src/state.js";
 import type { FleetSpec, FleetState } from "../src/types.js";
 
 async function root(spec: FleetSpec) {
@@ -27,7 +27,202 @@ function oneShotSpec(): FleetSpec {
   };
 }
 
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve = () => {};
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+describe("relaunchResetIds", () => {
+  it("returns self plus transitively blocked dependents", () => {
+    const spec: FleetSpec = {
+      fleet_name: "graph",
+      type: "dag",
+      config: { max_concurrent: 1 },
+      workers: [
+        { id: "a", type: "write", task: "t", depends_on: [], outputs: [] },
+        { id: "b", type: "write", task: "t", depends_on: ["a"], outputs: [] },
+        { id: "c", type: "write", task: "t", depends_on: ["b"], outputs: [] },
+        { id: "d", type: "write", task: "t", depends_on: [], outputs: [] },
+      ],
+    };
+    const state: FleetState = {
+      fleet_name: spec.fleet_name,
+      status: "failed",
+      created_at: new Date().toISOString(),
+      cost_usd_estimate: 0,
+      nodes: {
+        a: { status: "failed", turns: 1, tokens: 5, cost_usd_estimate: 0, produced_outputs: [] },
+        b: { status: "blocked", turns: 0, tokens: 0, cost_usd_estimate: 0, produced_outputs: [] },
+        c: { status: "blocked", turns: 0, tokens: 0, cost_usd_estimate: 0, produced_outputs: [] },
+        d: { status: "completed", turns: 1, tokens: 5, cost_usd_estimate: 0, produced_outputs: [] },
+      },
+      iteration: 1,
+      lgtm_streak: 0,
+      paused: false,
+      iterations: [],
+    };
+
+    expect(relaunchResetIds(spec, state, "a")).toEqual(["a", "b", "c"]);
+  });
+});
+
 describe("runFleet relaunch", () => {
+  it("re-dispatches a contract_failed node queued via relaunchRequests mid-run", async () => {
+    const spec: FleetSpec = {
+      fleet_name: "mid-run-contract",
+      type: "dag",
+      config: { max_concurrent: 2 },
+      workers: [
+        { id: "a", type: "write", task: "t", depends_on: [], outputs: [{ path: "output/a.md", kind: "markdown", required: true }] },
+        { id: "slow", type: "write", task: "t", depends_on: [], outputs: [] },
+      ],
+    };
+    const fleetRoot = await root(spec);
+    const counts: Record<string, number> = {};
+    const relaunchRequests = new Set<string>();
+    const slow = deferred();
+    let queued = false;
+
+    const final = await runFleet({
+      spec,
+      fleetRoot,
+      repoCwd: "/tmp",
+      relaunchRequests,
+      onNodeChange: (id, s) => {
+        if (id === "a" && s.status === "contract_failed" && !queued) {
+          queued = true;
+          relaunchRequests.add("a");
+          slow.resolve();
+        }
+      },
+      spawn: async (id) => {
+        counts[id] = (counts[id] ?? 0) + 1;
+        if (id === "a") {
+          if (counts[id] === 1) return { ok: true, turns: 1, tokens: 5 };
+          await writeFile(join(fleetRoot, "workers", "a", "output", "a.md"), "# A\n", "utf-8");
+          return { ok: true, turns: 1, tokens: 5 };
+        }
+        if (id === "slow") {
+          await slow.promise;
+          return { ok: true, turns: 1, tokens: 5 };
+        }
+        throw new Error(`unexpected spawn ${id}`);
+      },
+    });
+
+    expect(queued).toBe(true);
+    expect(counts).toEqual({ a: 2, slow: 1 });
+    expect(final.status).toBe("completed");
+    expect(final.nodes.a.status).toBe("completed");
+    expect(final.nodes.slow.status).toBe("completed");
+  });
+
+  it("relaunch of a failed upstream resets blocked downstream to pending", async () => {
+    const spec: FleetSpec = {
+      fleet_name: "mid-run-upstream",
+      type: "dag",
+      config: { max_concurrent: 2 },
+      workers: [
+        { id: "root", type: "write", task: "t", depends_on: [], outputs: [{ path: "output/root.md", kind: "markdown", required: true }] },
+        { id: "mid", type: "write", task: "t", depends_on: ["root"], outputs: [{ path: "output/mid.md", kind: "markdown", required: true }] },
+        { id: "slow", type: "write", task: "t", depends_on: [], outputs: [] },
+      ],
+    };
+    const fleetRoot = await root(spec);
+    const counts: Record<string, number> = {};
+    const relaunchRequests = new Set<string>();
+    const slow = deferred();
+    let queued = false;
+
+    const final = await runFleet({
+      spec,
+      fleetRoot,
+      repoCwd: "/tmp",
+      relaunchRequests,
+      onNodeChange: (id, s) => {
+        if (id === "mid" && s.status === "blocked" && !queued) {
+          queued = true;
+          relaunchRequests.add("root");
+          slow.resolve();
+        }
+      },
+      spawn: async (id) => {
+        counts[id] = (counts[id] ?? 0) + 1;
+        if (id === "root") {
+          if (counts[id] === 1) return { ok: false, turns: 1, tokens: 5, error: "fail" };
+          await writeFile(join(fleetRoot, "workers", "root", "output", "root.md"), "# root\n", "utf-8");
+          return { ok: true, turns: 1, tokens: 5 };
+        }
+        if (id === "mid") {
+          await writeFile(join(fleetRoot, "workers", "mid", "output", "mid.md"), "# mid\n", "utf-8");
+          return { ok: true, turns: 1, tokens: 5 };
+        }
+        if (id === "slow") {
+          await slow.promise;
+          return { ok: true, turns: 1, tokens: 5 };
+        }
+        throw new Error(`unexpected spawn ${id}`);
+      },
+    });
+
+    expect(queued).toBe(true);
+    expect(counts).toEqual({ root: 2, slow: 1, mid: 1 });
+    expect(final.status).toBe("completed");
+    expect(final.nodes.root.status).toBe("completed");
+    expect(final.nodes.mid.status).toBe("completed");
+    expect(final.nodes.slow.status).toBe("completed");
+  });
+
+  it("ignores relaunchRequests for nodes that are running or completed", async () => {
+    const spec: FleetSpec = {
+      fleet_name: "mid-run-ignore",
+      type: "dag",
+      config: { max_concurrent: 2 },
+      workers: [
+        { id: "a", type: "write", task: "t", depends_on: [], outputs: [{ path: "output/a.md", kind: "markdown", required: true }] },
+        { id: "slow", type: "write", task: "t", depends_on: [], outputs: [] },
+      ],
+    };
+    const fleetRoot = await root(spec);
+    const counts: Record<string, number> = {};
+    const relaunchRequests = new Set<string>();
+    const slow = deferred();
+
+    const final = await runFleet({
+      spec,
+      fleetRoot,
+      repoCwd: "/tmp",
+      relaunchRequests,
+      onNodeChange: (id, s) => {
+        if (id === "a" && s.status === "running") relaunchRequests.add("a");
+        if (id === "a" && s.status === "completed") {
+          relaunchRequests.add("a");
+          slow.resolve();
+        }
+      },
+      spawn: async (id) => {
+        counts[id] = (counts[id] ?? 0) + 1;
+        if (id === "a") {
+          await writeFile(join(fleetRoot, "workers", "a", "output", "a.md"), "# A\n", "utf-8");
+          return { ok: true, turns: 1, tokens: 5 };
+        }
+        if (id === "slow") {
+          await slow.promise;
+          return { ok: true, turns: 1, tokens: 5 };
+        }
+        throw new Error(`unexpected spawn ${id}`);
+      },
+    });
+
+    expect(counts).toEqual({ a: 1, slow: 1 });
+    expect(final.status).toBe("completed");
+    expect(final.nodes.a.status).toBe("completed");
+    expect(final.nodes.slow.status).toBe("completed");
+  });
+
   it("continuePass one-shot resume reruns failed node and blocked dependents, not completed nodes", async () => {
     const spec = oneShotSpec();
     const fleetRoot = await root(spec);

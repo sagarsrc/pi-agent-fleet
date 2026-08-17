@@ -30,6 +30,7 @@ async function plannedFleet(running = false): Promise<ActiveFleet> {
     running,
     sessions: new Map(),
     killedNodes: new Set(),
+    relaunchRequests: new Set(),
   };
 }
 

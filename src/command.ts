@@ -1,13 +1,13 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { activeFleet, currentState, ensureCanvas, killFleet, prepareRelaunch, startLoop, statusText, stopCanvas, updateWidget } from "./controller.js";
-import { persistFleetJson, writeWorkerPrompts } from "./fleet-store.js";
+import { activeFleet, currentState, ensureCanvas, killFleet, requestRelaunch, startLoop, statusText, stopCanvas, updateWidget } from "./controller.js";
+import { writeWorkerPrompts } from "./fleet-store.js";
 import { openInBrowser, listFleetRoots } from "./canvas.js";
 import { insertWorkers } from "./insert.js";
 import { editConfig, editNode, type ConfigEditKey, type NodeEditKey } from "./edits.js";
-import { listModelRefs, resolveModelReference } from "./model-resolution.js";
+import { listModelRefs } from "./model-resolution.js";
 import { clearPreference, loadPreferences, PREFERENCE_KEYS, savePreferences, setPreference } from "./preferences.js";
 import { recoverLatestFleet } from "./fleet-recovery.js";
-import { resetForRelaunch, writeState } from "./state.js";
+import { writeState } from "./state.js";
 import { buildWidgetLines } from "./ui.js";
 import { renderDag } from "./viz.js";
 
@@ -187,43 +187,15 @@ export function registerFleetCommand(pi: ExtensionAPI): void {
           ctx.ui.notify("usage: /fleet relaunch <node_id> [model]", "warning");
           return;
         }
-        if (active.running) {
-          ctx.ui.notify("fleet is running", "warning");
-          return;
-        }
         await currentState(active);
         if (active.state.status === "completed") {
           ctx.ui.notify("fleet completed, nothing to relaunch", "warning");
           return;
         }
-        const worker = active.spec.workers.find((w) => w.id === target);
-        if (!worker) {
-          ctx.ui.notify(`unknown node "${target}"`, "warning");
-          return;
-        }
-        const node = active.state.nodes[target];
-        const relaunchable: ReadonlySet<string> = new Set(["failed", "contract_failed", "killed"]);
-        if (!node || !relaunchable.has(node.status)) {
-          ctx.ui.notify(`node "${target}" status ${node?.status ?? "missing"} cannot be relaunched; must be failed, contract_failed, or killed`, "warning");
-          return;
-        }
         const model = args.trim().split(/\s+/).slice(2).join(" ") || undefined;
-        if (model) {
-          const resolved = resolveModelReference(ctx.modelRegistry, model);
-          if (!resolved.ok) {
-            ctx.ui.notify(resolved.error, "error");
-            return;
-          }
-          const canonical = `${resolved.model.provider}/${resolved.model.id}`;
-          active.spec.workers = active.spec.workers.map((w) => w.id === target ? { ...w, model: canonical } : w);
-          await persistFleetJson(active);
-        }
-        active.state = resetForRelaunch(active.state, active.spec, target);
-        await writeState(active.fleetRoot, active.state);
-        await writeWorkerPrompts(active);
-        prepareRelaunch(active, target);
-        void startLoop(active, ctx, false, true);
-        ctx.ui.notify(`fleet relaunch requested for ${target}`, "info");
+        const result = await requestRelaunch(active, target, model, ctx.modelRegistry);
+        if (result.startNow) void startLoop(active, ctx, false, true);
+        ctx.ui.notify(result.message, result.startNow ? "info" : result.message.startsWith("relaunch queued") ? "info" : "warning");
         return;
       }
       if (cmd === "add") {

@@ -32,6 +32,7 @@ export async function readDiskFleet(fleetRoot: string): Promise<ActiveFleet> {
     running: false,
     sessions: new Map(),
     killedNodes: new Set(),
+    relaunchRequests: new Set(),
   };
 }
 

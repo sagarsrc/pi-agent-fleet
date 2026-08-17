@@ -23,6 +23,7 @@ function runningFleet(): ActiveFleet {
     running: true,
     sessions: new Map(),
     killedNodes: new Set(),
+    relaunchRequests: new Set(),
     widgetVisible: true,
   };
 }

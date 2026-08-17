@@ -31,6 +31,7 @@ async function fleetAt(status: "pending" | "running"): Promise<ActiveFleet> {
     running: false,
     sessions: new Map(),
     killedNodes: new Set(),
+    relaunchRequests: new Set(),
   };
 }
 

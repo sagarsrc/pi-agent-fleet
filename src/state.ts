@@ -121,34 +121,34 @@ export function patchNode(
   return { ...state, nodes, cost_usd_estimate: cost };
 }
 
-export function resetForRelaunch(state: FleetState, spec: FleetSpec, nodeId: string): FleetState {
+export function relaunchResetIds(spec: FleetSpec, state: FleetState, nodeId: string): string[] {
   if (!state.nodes[nodeId]) throw new Error(`unknown node "${nodeId}"`);
-
   const dependents: Record<string, string[]> = {};
   for (const w of spec.workers) {
     for (const dep of w.depends_on) {
       (dependents[dep] ??= []).push(w.id);
     }
   }
-
-  const downstream = new Set<string>();
-  const walk = (id: string) => {
-    for (const d of dependents[id] ?? []) {
-      if (!downstream.has(d)) {
-        downstream.add(d);
-        walk(d);
-      }
+  const out = [nodeId];
+  const seen = new Set(out);
+  const queue = [nodeId];
+  while (queue.length) {
+    for (const d of dependents[queue.shift()!] ?? []) {
+      if (seen.has(d)) continue;
+      seen.add(d);
+      if (state.nodes[d]?.status === "blocked") out.push(d);
+      queue.push(d);
     }
-  };
-  walk(nodeId);
+  }
+  return out;
+}
 
+export function resetForRelaunch(state: FleetState, spec: FleetSpec, nodeId: string): FleetState {
   const fresh: NodeState = { status: "pending", turns: 0, tokens: 0, cost_usd_estimate: 0, produced_outputs: [] };
   const nodes = { ...state.nodes };
-  nodes[nodeId] = fresh;
-  for (const id of downstream) {
-    if (state.nodes[id].status === "blocked") {
-      nodes[id] = fresh;
-    }
+  for (const id of relaunchResetIds(spec, state, nodeId)) {
+    if (id !== nodeId && state.nodes[id]?.status !== "blocked") continue;
+    nodes[id] = fresh;
   }
 
   const cost = fleetCost({ ...state, nodes });

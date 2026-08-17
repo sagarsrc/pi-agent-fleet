@@ -1,7 +1,7 @@
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { contractFailureNote, verifyOutputs } from "./contracts.js";
-import { archiveIteration, initFleetState, patchNode, resetForIteration, snapshotIteration, writeState } from "./state.js";
+import { archiveIteration, initFleetState, patchNode, relaunchResetIds, resetForIteration, snapshotIteration, writeState } from "./state.js";
 import { TERMINAL_NODE_STATUSES } from "./types.js";
 import type { FleetSpec, FleetState, IterationSnapshot, NodeState, Verdict, WorkerSpec } from "./types.js";
 import { commitWorktree, createWorktree, prepareIntegratorWorktree } from "./worktree.js";
@@ -20,6 +20,7 @@ export interface RunFleetOpts {
   killSwitch?: { killed: boolean };
   pauseSwitch?: { paused: boolean };
   nodeKills?: ReadonlySet<string>;
+  relaunchRequests?: Set<string>;
   resumeFrom?: FleetState;
   continuePass?: boolean;
   onIterationEnd?: (snap: IterationSnapshot) => void;
@@ -111,6 +112,31 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
 
   const runPass = async (): Promise<void> => {
     while (true) {
+      // apply queued relaunch requests (lost-wakeup fix, issue #1 bug 2)
+      if (opts.relaunchRequests && opts.relaunchRequests.size > 0) {
+        for (const id of [...opts.relaunchRequests]) {
+          opts.relaunchRequests.delete(id);
+          const n = state.nodes[id];
+          if (!n || !FAILED.has(n.status)) continue;
+          for (const rid of relaunchResetIds(spec, state, id)) {
+            const rn = state.nodes[rid];
+            if (!rn) continue;
+            if (rid === id && !FAILED.has(rn.status)) continue;
+            if (rid !== id && rn.status !== "blocked") continue;
+            await patch(rid, {
+              status: "pending",
+              started_at: undefined,
+              ended_at: undefined,
+              turns: 0,
+              tokens: 0,
+              cost_usd_estimate: 0,
+              produced_outputs: [],
+              contract_result: undefined,
+              status_note: undefined,
+            });
+          }
+        }
+      }
       // auto-initialize workers inserted into the spec after the run started
       for (const w of spec.workers) {
         if (!state.nodes[w.id]) {
