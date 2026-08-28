@@ -70,7 +70,37 @@ export async function statusText(fleet: ActiveFleet): Promise<string> {
     : failed ? `next: fleet_relaunch ${failed[0]}`
     : state.status === "completed" ? `next: read report ${reportPath}`
     : `next: inspect ${join(fleet.fleetRoot, "state.json")}`;
-  return `${renderDag(fleet.spec, state)}\n\nreport: ${reportPath}\n${next}`;
+  let crashWarning = "";
+  if (state.status === "running") {
+    const heartbeat = state.heartbeat_at;
+    const stale = !heartbeat || (Date.now() - new Date(heartbeat).getTime() > 60000);
+    if (stale && typeof state.pid === "number") {
+      let dead = false;
+      try {
+        process.kill(state.pid, 0);
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === "ESRCH") dead = true;
+      }
+      if (dead) {
+        crashWarning = `\n\nwarning: fleet appears crashed (stale heartbeat/dead pid ${state.pid}); run fleet_continue to recover`;
+      }
+    }
+  }
+  return `${renderDag(fleet.spec, state)}\n\nreport: ${reportPath}\n${next}${crashWarning}`;
+}
+
+export function checkCostLimits(fleet: ActiveFleet, ctx: ExtensionContext): void {
+  const warn = fleet.spec.config.warn_cost_usd;
+  const cap = fleet.spec.config.max_cost_usd;
+  const cost = fleet.state.cost_usd_estimate;
+  if (warn && !fleet.costWarned && cost >= warn) {
+    fleet.costWarned = true;
+    if (ctx.hasUI) ctx.ui.notify(`fleet cost warning: $${cost.toFixed(4)} >= $${warn}`, "warning");
+  }
+  if (cap && cost >= cap && !fleet.killSwitch.killed) {
+    fleet.killSwitch.killed = true;
+    if (ctx.hasUI) ctx.ui.notify(`fleet cost cap reached: $${cost.toFixed(4)} >= $${cap.toFixed(4)}`, "error");
+  }
 }
 
 export async function dagPreview(spec: FleetSpec, state: FleetState | undefined, fleetRoot: string): Promise<string> {
@@ -180,17 +210,40 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
 
   fleet.running = true;
   fleet.costWarned = false;
-  fleet.state = { ...fleet.state, status: "running" };
+  fleet.state = { ...fleet.state, status: "running", pid: process.pid, heartbeat_at: new Date().toISOString() };
+  await writeState(fleet.fleetRoot, fleet.state);
   const stopSpinner = startSpinner(ctx, fleet);
   updateWidget(ctx, fleet);
 
-  const checkCostWarning = () => {
-    const warn = fleet.spec.config.warn_cost_usd;
-    if (!warn || fleet.costWarned) return;
-    const cost = fleet.state.cost_usd_estimate;
-    if (cost >= warn) {
-      fleet.costWarned = true;
-      if (ctx.hasUI) ctx.ui.notify(`fleet cost warning: $${cost.toFixed(4)} >= $${warn}`, "warning");
+  let lastHeartbeatWrite = Date.now();
+  const heartbeatInterval = setInterval(async () => {
+    const now = Date.now();
+    if (now - lastHeartbeatWrite < 5000) return;
+    fleet.state = { ...fleet.state, heartbeat_at: new Date().toISOString() };
+    lastHeartbeatWrite = now;
+    try {
+      await writeState(fleet.fleetRoot, fleet.state);
+    } catch {
+      // ignore heartbeat write failures
+    }
+  }, 5000);
+  if (typeof heartbeatInterval.unref === "function") heartbeatInterval.unref();
+
+  let cleanedUp = false;
+  let finalStateWritten = false;
+  const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    stopSpinner();
+    clearInterval(heartbeatInterval);
+  };
+  const writeFinalState = async () => {
+    if (finalStateWritten) return;
+    finalStateWritten = true;
+    try {
+      await writeState(fleet.fleetRoot, fleet.state);
+    } catch {
+      // best-effort final persistence
     }
   };
 
@@ -236,7 +289,7 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
             if (e.type === "tokens") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { tokens: e.tokens });
             if (e.type === "cost") {
               fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { cost_usd_estimate: e.cost });
-              checkCostWarning();
+              checkCostLimits(fleet, ctx);
             }
             if (e.type === "error") fleet.state = patchNode(fleet.fleetRoot, fleet.state, nodeId, { status_note: e.message });
             updateWidget(ctx, fleet);
@@ -271,7 +324,7 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
         fleet.state = fleet.state.nodes[nodeId]
           ? patchNode(fleet.fleetRoot, fleet.state, nodeId, nodeState)
           : { ...fleet.state, nodes: { ...fleet.state.nodes, [nodeId]: nodeState } };
-        checkCostWarning();
+        checkCostLimits(fleet, ctx);
         updateWidget(ctx, fleet);
       },
       onNodeAdded: (w) => {
@@ -298,9 +351,10 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
     });
     fleet.state = state;
     fleet.running = false;
-    stopSpinner();
+    cleanup();
     updateWidget(ctx, fleet); // keep final per-node stats visible (todo #12)
-    const report = await writeReport({ spec: fleet.spec, state, fleetRoot: fleet.fleetRoot, repoCwd: ctx.cwd });
+    await writeReport({ spec: fleet.spec, state, fleetRoot: fleet.fleetRoot, repoCwd: ctx.cwd });
+    await writeFinalState();
     const last = state.iterations[state.iterations.length - 1];
     if (state.status === "paused" && last?.verdict === "escalate") {
       if (ctx.hasUI) ctx.ui.notify(`fleet paused: reviewer escalated; report: ${join(fleet.fleetRoot, "report.md")}`, "warning");
@@ -309,8 +363,9 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
     }
   } catch (err: unknown) {
     fleet.running = false;
-    stopSpinner();
+    cleanup();
     updateWidget(ctx, fleet);
+    await writeFinalState();
     const error = err instanceof Error ? err.message : String(err);
     if (ctx.hasUI) ctx.ui.notify(`fleet failed: ${error}`, "error");
   }

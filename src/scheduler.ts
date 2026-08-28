@@ -25,6 +25,15 @@ export interface RunFleetOpts {
   continuePass?: boolean;
   onIterationEnd?: (snap: IterationSnapshot) => void;
   prepareIteration?: (n: number, state: FleetState) => Promise<void>;
+  retryDelayMs?: (attempt: number) => number;
+}
+
+const MAX_RETRY_ATTEMPTS = 3;
+const DEFAULT_RETRY_DELAY_MS = (attempt: number): number => 1000 * 2 ** attempt;
+const RETRYABLE_ERROR_RE = /usage limit|rate.?limit|429|overloaded|502|503|timed? ?out|timeout|econnreset|etimedout|econnrefused|fetch failed/i;
+
+export function isRetryableError(message: string): boolean {
+  return RETRYABLE_ERROR_RE.test(message);
 }
 
 const FAILED: ReadonlySet<string> = new Set(["failed", "contract_failed", "killed", "blocked"]);
@@ -84,6 +93,15 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
   };
 
   const running = new Set<Promise<void>>();
+  const circuitErrors = new Map<string, Set<string>>();
+  let circuitOpen = false;
+  function recordCircuitError(nodeId: string, error: string | undefined) {
+    if (!error) return;
+    const set = circuitErrors.get(error) ?? new Set<string>();
+    set.add(nodeId);
+    circuitErrors.set(error, set);
+    if (set.size >= 2) circuitOpen = true;
+  }
 
   const repoCwdFor = (nodeId: string): string =>
     typeof opts.repoCwd === "function" ? opts.repoCwd(nodeId) : opts.repoCwd;
@@ -192,6 +210,23 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
           await patch(w.id, { status: "killed", ended_at: new Date().toISOString() });
         }
       }
+      // circuit breaker: two distinct nodes failed with the identical error
+      if (circuitOpen) {
+        const [tripError, tripSet] = [...circuitErrors.entries()].find(([_, ids]) => ids.size >= 2) ?? ["", new Set<string>()];
+        const tripCount = tripSet.size;
+        const note = `circuit breaker: ${tripCount} nodes failed with identical error: ${tripError.slice(0, 80)}`;
+        for (const w of spec.workers) {
+          const n = state.nodes[w.id];
+          if (!n || (n.status !== "pending" && n.status !== "ready")) continue;
+          await patch(w.id, { status: "blocked", ended_at: new Date().toISOString(), status_note: note });
+        }
+        if (running.size > 0) {
+          await Promise.race(running);
+          continue;
+        }
+        break;
+      }
+
       // dispatch ready
       const activeCount = running.size;
       let slots = spec.config.max_concurrent - activeCount;
@@ -264,16 +299,55 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
 
         const dispatchMs = Date.now();
         await patch(w.id, { status: "running", started_at: new Date().toISOString() });
-        const p = opts.spawn(w.id).then(async (res) => {
+        const p = (async () => {
+          let totals = { turns: 0, tokens: 0, cost: 0 };
+          let lastRes: Awaited<ReturnType<typeof opts.spawn>> | undefined;
+          let finalError: string | undefined;
+
+          for (let attempt = 0; attempt < MAX_RETRY_ATTEMPTS; attempt++) {
+            if (opts.killSwitch?.killed) return;
+            if (opts.nodeKills?.has(w.id)) {
+              await patch(w.id, { status: "killed", ended_at: new Date().toISOString(), turns: totals.turns, tokens: totals.tokens, cost_usd_estimate: totals.cost });
+              return;
+            }
+            const res = await opts.spawn(w.id);
+            lastRes = res;
+            totals.turns += res.turns;
+            totals.tokens += res.tokens;
+            totals.cost += res.cost ?? 0;
+            if (opts.killSwitch?.killed) return;
+            if (opts.nodeKills?.has(w.id)) {
+              await patch(w.id, { status: "killed", ended_at: new Date().toISOString(), turns: totals.turns, tokens: totals.tokens, cost_usd_estimate: totals.cost });
+              return;
+            }
+            if (res.ok) {
+              finalError = undefined;
+              break;
+            }
+            finalError = res.error;
+            if (!res.error || !isRetryableError(res.error) || attempt === MAX_RETRY_ATTEMPTS - 1) {
+              break;
+            }
+            await patch(w.id, { status_note: `retry ${attempt + 1}/${MAX_RETRY_ATTEMPTS - 1} after: ${res.error}` });
+            const delayMs = opts.retryDelayMs ? opts.retryDelayMs(attempt) : DEFAULT_RETRY_DELAY_MS(attempt);
+            await new Promise((r) => setTimeout(r, delayMs));
+          }
+
+          const res = lastRes;
+          if (!res) return;
+
           if (opts.killSwitch?.killed) return;
           if (opts.nodeKills?.has(w.id)) {
-            await patch(w.id, { status: "killed", ended_at: new Date().toISOString(), turns: res.turns, tokens: res.tokens, cost_usd_estimate: res.cost ?? 0 });
+            await patch(w.id, { status: "killed", ended_at: new Date().toISOString(), turns: totals.turns, tokens: totals.tokens, cost_usd_estimate: totals.cost });
             return;
           }
+
           if (!res.ok) {
-            await patch(w.id, { status: "failed", ended_at: new Date().toISOString(), turns: res.turns, tokens: res.tokens, cost_usd_estimate: res.cost ?? 0 });
+            await patch(w.id, { status: "failed", ended_at: new Date().toISOString(), turns: totals.turns, tokens: totals.tokens, cost_usd_estimate: totals.cost });
+            recordCircuitError(w.id, finalError ?? res.error);
             return;
           }
+
           if (w.worktree) {
             try {
               await commitWorktree({
@@ -287,9 +361,9 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
               await patch(w.id, {
                 status: "failed",
                 ended_at: new Date().toISOString(),
-                turns: res.turns,
-                tokens: res.tokens,
-                cost_usd_estimate: res.cost ?? 0,
+                turns: totals.turns,
+                tokens: totals.tokens,
+                cost_usd_estimate: totals.cost,
                 status_note: `commit failed: ${msg}`,
               });
               return;
@@ -306,9 +380,9 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
           await patch(w.id, {
             status: contract.ok ? "completed" : "contract_failed",
             ended_at: new Date().toISOString(),
-            turns: res.turns,
-            tokens: res.tokens,
-            cost_usd_estimate: res.cost ?? 0,
+            turns: totals.turns,
+            tokens: totals.tokens,
+            cost_usd_estimate: totals.cost,
             contract_result: contract,
             produced_outputs: contract.checks.filter((c) => c.ok || c.actualPath).map((c) => c.path),
             status_note: contract.ok ? costNote : [contractFailureNote(contract.checks), costNote].filter(Boolean).join(" · "),
@@ -317,7 +391,7 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
             const note = await opts.onNodeCompleted?.(w.id);
             if (note) await patch(w.id, { status_note: note });
           }
-        }).finally(() => running.delete(p));
+        })().finally(() => running.delete(p));
         running.add(p);
       }
       if (running.size > 0) {

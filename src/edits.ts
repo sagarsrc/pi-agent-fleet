@@ -8,7 +8,7 @@ import type { NodeStatus, ThinkingLevelName } from "./types.js";
 import { THINKING_LEVELS } from "./types.js";
 
 export type NodeEditKey = "model" | "effort" | "task";
-export type ConfigEditKey = "max_concurrent" | "warn_cost_usd" | "model" | "effort";
+export type ConfigEditKey = "max_concurrent" | "warn_cost_usd" | "max_cost_usd" | "model" | "effort";
 
 export interface EditResult {
   ok: boolean;
@@ -85,6 +85,12 @@ export async function editConfig(
       fleet.spec.config.warn_cost_usd = n;
       break;
     }
+    case "max_cost_usd": {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0) return { ok: false, message: "max_cost_usd must be a number >= 0" };
+      fleet.spec.config.max_cost_usd = n;
+      break;
+    }
     case "model": {
       const r = resolveModelReference(registry, value);
       if (!r.ok) return { ok: false, message: r.error };
@@ -99,7 +105,7 @@ export async function editConfig(
       break;
     }
     default:
-      return { ok: false, message: `unknown config key "${String(key)}" (keys: max_concurrent, warn_cost_usd, model, effort)` };
+      return { ok: false, message: `unknown config key "${String(key)}" (keys: max_concurrent, warn_cost_usd, max_cost_usd, model, effort)` };
   }
   await persistFleetJson(fleet);
   return { ok: true, message: `config.${key} updated` };

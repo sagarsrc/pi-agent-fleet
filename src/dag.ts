@@ -107,6 +107,7 @@ export function validateFleetSpec(
     errors.push(`config.effort must be one of ${THINKING_LEVELS.join(", ")}`);
   }
   const warnCost = typeof cfg.warn_cost_usd === "number" ? cfg.warn_cost_usd : undefined;
+  const maxCost = typeof cfg.max_cost_usd === "number" ? cfg.max_cost_usd : undefined;
 
   const rawWorkers = Array.isArray(r?.workers) ? (r.workers as Record<string, unknown>[]) : [];
   if (rawWorkers.length === 0) errors.push("at least one worker required");
@@ -266,7 +267,7 @@ export function validateFleetSpec(
   const spec: FleetSpec = {
     fleet_name: String(r?.fleet_name ?? ""),
     type: "dag",
-    config: { max_concurrent: maxConcurrent, model, effort, warn_cost_usd: warnCost, loop: loopConfig },
+    config: { max_concurrent: maxConcurrent, model, effort, warn_cost_usd: warnCost, max_cost_usd: maxCost, loop: loopConfig },
     workers,
   };
 

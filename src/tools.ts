@@ -58,6 +58,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
       model: Type.Optional(Type.String({ description: "Fleet-wide default model" })),
       effort: Type.Optional(EffortSchema),
       warn_cost_usd: Type.Optional(Type.Number()),
+      max_cost_usd: Type.Optional(Type.Number()),
       loop: Type.Optional(Type.Object({
         gate: Type.Union([Type.Literal("reviewer"), Type.Literal("none")]),
         max_iterations: Type.Number(),
@@ -335,11 +336,11 @@ export function registerFleetTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "fleet_edit",
     label: "Fleet Edit",
-    description: "Edit the active fleet: a pending or relaunchable node's model, effort, or task — or fleet config (max_concurrent, warn_cost_usd, model, effort) when node_id is omitted. Changes persist to fleet.json and apply immediately. Edits to running or completed nodes are refused; pending, blocked, failed, contract_failed, and killed nodes can be edited (blocked nodes have not started — nothing to invalidate).",
+    description: "Edit the active fleet: a pending or relaunchable node's model, effort, or task — or fleet config (max_concurrent, warn_cost_usd, max_cost_usd, model, effort) when node_id is omitted. Changes persist to fleet.json and apply immediately. Edits to running or completed nodes are refused; pending, blocked, failed, contract_failed, and killed nodes can be edited (blocked nodes have not started — nothing to invalidate).",
     promptSnippet: "Edit a pending fleet node or fleet config.",
     parameters: Type.Object({
       node_id: Type.Optional(Type.String({ description: "Worker id to edit; omit for fleet config edits" })),
-      key: Type.String({ description: "Node keys: model, effort, task. Config keys: max_concurrent, warn_cost_usd, model, effort" }),
+      key: Type.String({ description: "Node keys: model, effort, task. Config keys: max_concurrent, warn_cost_usd, max_cost_usd, model, effort" }),
       value: Type.String({ description: "New value" }),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {

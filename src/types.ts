@@ -44,6 +44,8 @@ export interface FleetConfig {
   model?: string;
   effort?: ThinkingLevelName;
   warn_cost_usd?: number;
+  /** hard cap — fleet is killed when total estimated cost reaches it */
+  max_cost_usd?: number;
   loop?: LoopConfig;
 }
 
@@ -112,6 +114,10 @@ export interface FleetState {
   lgtm_streak: number;
   paused: boolean;
   iterations: IterationSnapshot[];
+  /** liveness signal written by the running controller */
+  pid?: number;
+  /** ISO timestamp liveness signal written by the running controller */
+  heartbeat_at?: string;
 }
 
 export const WORKER_TYPE_TOOLS: Record<WorkerType, string[]> = {

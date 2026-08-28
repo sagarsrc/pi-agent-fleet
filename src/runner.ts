@@ -1,4 +1,4 @@
-import { createAgentSession, SessionManager, type CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, SessionManager, DefaultResourceLoader, type CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ThinkingLevelName, WorkerSpec } from "./types.js";
 import { WORKER_TYPE_TOOLS } from "./types.js";
@@ -29,12 +29,33 @@ export interface SessionOpts {
 
 export type SessionFactory = (opts: SessionOpts) => Promise<AgentSessionLike>;
 
+// Fleet workers must not load user extensions/skills: reading global skill files
+// burns tokens mid-task, and extensions like pi-web-access run background async work
+// that can crash the pi process after the session is disposed.
+async function createLeanResourceLoader(cwd: string): Promise<DefaultResourceLoader> {
+  const loader = new DefaultResourceLoader({
+    cwd,
+    agentDir: cwd,
+    noExtensions: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: true,
+    systemPromptOverride: () => undefined,
+    appendSystemPromptOverride: () => [],
+  });
+  await loader.reload();
+  return loader;
+}
+
 export const defaultSessionFactory: SessionFactory = async (opts) => {
+  const resourceLoader = await createLeanResourceLoader(opts.cwd);
   const { session } = await createAgentSession({
     cwd: opts.cwd,
     tools: opts.tools,
     sessionManager: SessionManager.create(opts.cwd, opts.sessionDir),
     thinkingLevel: opts.thinkingLevel as ThinkingLevelOption,
+    resourceLoader,
   });
   return session as unknown as AgentSessionLike;
 };
@@ -133,12 +154,14 @@ export async function runWorker(opts: RunWorkerOpts): Promise<RunWorkerResult> {
 
 export function sessionFactoryForModel(model: Model<Api>): SessionFactory {
   return async (opts) => {
+    const resourceLoader = await createLeanResourceLoader(opts.cwd);
     const { session } = await createAgentSession({
       cwd: opts.cwd,
       tools: opts.tools,
       sessionManager: SessionManager.create(opts.cwd, opts.sessionDir),
       model,
       thinkingLevel: opts.thinkingLevel as ThinkingLevelOption,
+      resourceLoader,
     });
     return session as unknown as AgentSessionLike;
   };

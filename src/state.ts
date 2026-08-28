@@ -32,6 +32,8 @@ export async function readState(fleetRoot: string): Promise<FleetState> {
     lgtm_streak: parsed.lgtm_streak ?? 0,
     paused: parsed.paused ?? false,
     iterations: parsed.iterations ?? [],
+    pid: parsed.pid,
+    heartbeat_at: parsed.heartbeat_at,
   };
 }
 

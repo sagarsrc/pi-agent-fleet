@@ -128,13 +128,21 @@ describe("editConfig", () => {
     expect((await editConfig(fleet, "nope" as never, "1", registry)).message).toContain("unknown config key");
   });
 
-  it("sets warn_cost_usd, effort, and canonical model", async () => {
+  it("sets max_cost_usd, effort, and canonical model", async () => {
     const fleet = await fleetAt("pending");
+    expect((await editConfig(fleet, "max_cost_usd", "10", registry)).ok).toBe(true);
+    expect(fleet.spec.config.max_cost_usd).toBe(10);
     expect((await editConfig(fleet, "warn_cost_usd", "3.5", registry)).ok).toBe(true);
     expect(fleet.spec.config.warn_cost_usd).toBe(3.5);
     expect((await editConfig(fleet, "effort", "low", registry)).ok).toBe(true);
     expect(fleet.spec.config.effort).toBe("low");
     expect((await editConfig(fleet, "model", "gpt-5.4", registry)).ok).toBe(true);
     expect(fleet.spec.config.model).toBe("openai/gpt-5.4");
+  });
+
+  it("validates max_cost_usd values", async () => {
+    const fleet = await fleetAt("pending");
+    expect((await editConfig(fleet, "max_cost_usd", "-2", registry)).ok).toBe(false);
+    expect((await editConfig(fleet, "max_cost_usd", "abc", registry)).ok).toBe(false);
   });
 });

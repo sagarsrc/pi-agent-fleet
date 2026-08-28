@@ -225,5 +225,14 @@ describe("getDependents", () => {
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.spec.config.model).toBeUndefined();
   });
+
+  it("preserves max_cost_usd config", () => {
+    const r = validateFleetSpec({
+      ...base,
+      config: { ...base.config, max_cost_usd: 9.99 },
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.spec.config.max_cost_usd).toBe(9.99);
+  });
 });
 
