@@ -52,6 +52,19 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
   let state: FleetState;
   if (opts.resumeFrom) {
     state = { ...opts.resumeFrom, paused: false, status: "running" };
+    // Crash recovery: nodes left "running" on disk by a dead process have no live
+    // session in this runFleet call — reset them to pending so they get dispatched.
+    // Without this, the scheduler can neither dispatch nor terminate them and spins
+    // forever (nothing runnable, not all nodes terminal).
+    for (const w of spec.workers) {
+      if (state.nodes[w.id]?.status === "running") {
+        state = patchNode(fleetRoot, state, w.id, {
+          status: "pending",
+          started_at: undefined,
+          status_note: "recovered stale running state from a previous crashed/killed process",
+        });
+      }
+    }
     await writeState(fleetRoot, state);
     if (allNodesTerminal(state, spec) && !opts.continuePass) {
       state = resetForIteration(state, spec);
@@ -314,6 +327,33 @@ export async function runFleet(opts: RunFleetOpts): Promise<FleetState> {
         return !!n && TERMINAL_NODE_STATUSES.has(n.status);
       })) {
         break;
+      } else {
+        // Defensive: nothing in flight, not all terminal, and nothing dispatchable
+        // would mean a tight infinite loop (busy-spin, event-loop starvation).
+        // Fail the stuck nodes instead of hanging.
+        const dispatchable = spec.workers.some((w) => {
+          const n = state.nodes[w.id];
+          if (!n || (n.status !== "pending" && n.status !== "ready")) return false;
+          if (opts.nodeKills?.has(w.id)) return true; // will be killed next pass
+          return w.depends_on.every((d) => state.nodes[d]?.status === "completed");
+        });
+        const blockingDepsFailed = spec.workers.some((w) => {
+          const n = state.nodes[w.id];
+          if (!n || (n.status !== "pending" && n.status !== "ready")) return false;
+          return w.depends_on.some((d) => FAILED.has(state.nodes[d]?.status ?? ""));
+        });
+        if (!dispatchable && !blockingDepsFailed) {
+          for (const w of spec.workers) {
+            const n = state.nodes[w.id];
+            if (!n || TERMINAL_NODE_STATUSES.has(n.status)) continue;
+            await patch(w.id, {
+              status: "failed",
+              ended_at: new Date().toISOString(),
+              status_note: `stuck in non-terminal status "${n.status}" with no dispatchable path; failed to avoid scheduler hang`,
+            });
+          }
+          break;
+        }
       }
     }
     await Promise.allSettled([...running]);

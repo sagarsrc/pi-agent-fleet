@@ -49,6 +49,25 @@ describe("runFleet", () => {
     expect(s.nodes.a.status).toBe("completed");
     expect(s.cost_usd_estimate).toBeGreaterThanOrEqual(0);
   });
+  it("recovers stale 'running' nodes from a crashed process instead of hanging", async () => {
+    const sp = spec();
+    const fleetRoot = await root();
+    // Simulate crash: node a left in non-terminal "running" on disk.
+    const resumeFrom = patchNode(fleetRoot, initFleetState(sp), "a", { status: "running" });
+    const spawned: string[] = [];
+    const s = await runFleet({
+      spec: sp,
+      fleetRoot,
+      repoCwd: "/tmp",
+      spawn: async (id) => { spawned.push(id); return { ok: true, turns: 1, tokens: 10 }; },
+      resumeFrom,
+      continuePass: true,
+    });
+    expect(spawned).toContain("a");
+    expect(s.nodes.a.status).toBe("completed");
+    expect(s.status).toBe("completed");
+  }, 10000);
+
   it("blocks dependents of failed nodes", async () => {
     const s = await runFleet({
       spec: spec(), fleetRoot: await root(), repoCwd: "/tmp",

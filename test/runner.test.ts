@@ -77,6 +77,63 @@ describe("runWorker", () => {
     expect(res.error).toContain("model exploded");
   });
 
+  it("returns ok:false when the final assistant message has stopReason error (model error resolves prompt normally)", async () => {
+    function erroredSession() {
+      const listeners: ((e: { type: string; message?: unknown }) => void)[] = [];
+      return {
+        async prompt() {
+          for (const l of listeners) l({ type: "turn_end" });
+          // pi resolves session.prompt() normally on model errors; the failure is only
+          // visible via the assistant message stopReason/errorMessage.
+          for (const l of listeners) l({
+            type: "message_end",
+            message: { role: "assistant", stopReason: "error", errorMessage: "Codex error: The usage limit has been reached" },
+          });
+        },
+        async abort() {},
+        subscribe(l: (e: { type: string; message?: unknown }) => void) { listeners.push(l); return () => {}; },
+        dispose() {},
+      };
+    }
+    const events: string[] = [];
+    const r = await runWorker({
+      nodeId: "w", worker, prompt: "p", repoCwd: "/tmp",
+      onEvent: (e) => events.push(e.type),
+      sessionFactory: async () => erroredSession(),
+    });
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("usage limit");
+    expect(events).toContain("error");
+    expect(events).not.toContain("done");
+  });
+
+  it("succeeds when an earlier errored assistant message is followed by a successful one (retry recovery)", async () => {
+    function recoveredSession() {
+      const listeners: ((e: { type: string; message?: unknown }) => void)[] = [];
+      return {
+        async prompt() {
+          for (const l of listeners) l({
+            type: "message_end",
+            message: { role: "assistant", stopReason: "error", errorMessage: "transient" },
+          });
+          for (const l of listeners) l({
+            type: "message_end",
+            message: { role: "assistant", stopReason: "stop", usage: { totalTokens: 50 } },
+          });
+        },
+        async abort() {},
+        subscribe(l: (e: { type: string; message?: unknown }) => void) { listeners.push(l); return () => {}; },
+        dispose() {},
+      };
+    }
+    const r = await runWorker({
+      nodeId: "w", worker, prompt: "p", repoCwd: "/tmp",
+      onEvent: () => {},
+      sessionFactory: async () => recoveredSession(),
+    });
+    expect(r.ok).toBe(true);
+  });
+
   it("invokes onSession with the created session", async () => {
     const fake = {
       prompt: async () => {},

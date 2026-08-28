@@ -79,13 +79,29 @@ export async function runWorker(opts: RunWorkerOpts): Promise<RunWorkerResult> {
   let turns = 0;
   let tokens = 0;
   let cost = 0;
+  // pi resolves session.prompt() normally even when the model run ends in an error
+  // (e.g. provider usage limit) — the failure is only visible on the final assistant
+  // message's stopReason/errorMessage. Track the last assistant message so a resolved
+  // prompt that actually errored is reported as ok:false instead of running the output
+  // contract against files that were never written.
+  let lastStopReason: string | undefined;
+  let lastErrorMessage: string | undefined;
   const unsub = session.subscribe((e) => {
     if (e.type === "turn_end") {
       turns++;
       opts.onEvent({ type: "turn", nodeId: opts.nodeId, turns });
     }
     if (e.type === "message_end") {
-      const msg = e.message as { role?: string; usage?: { totalTokens?: number; cost?: { total?: number } } } | undefined;
+      const msg = e.message as {
+        role?: string;
+        stopReason?: string;
+        errorMessage?: string;
+        usage?: { totalTokens?: number; cost?: { total?: number } };
+      } | undefined;
+      if (msg?.role === "assistant") {
+        lastStopReason = msg.stopReason;
+        lastErrorMessage = msg.errorMessage;
+      }
       if (msg?.role === "assistant" && msg.usage?.totalTokens) {
         tokens += msg.usage.totalTokens;
         opts.onEvent({ type: "tokens", nodeId: opts.nodeId, tokens });
@@ -98,6 +114,11 @@ export async function runWorker(opts: RunWorkerOpts): Promise<RunWorkerResult> {
   });
   try {
     await session.prompt(opts.prompt);
+    if (lastStopReason === "error") {
+      const message = lastErrorMessage ?? "worker model run ended with an error";
+      opts.onEvent({ type: "error", nodeId: opts.nodeId, message });
+      return { ok: false, turns, tokens, cost, error: message };
+    }
     opts.onEvent({ type: "done", nodeId: opts.nodeId });
     return { ok: true, turns, tokens, cost };
   } catch (err) {
