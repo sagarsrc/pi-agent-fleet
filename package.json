@@ -1,6 +1,6 @@
 {
   "name": "pi-agent-fleet",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "DAG-of-agents fleets for pi — parallel workers with contracts, reviewer-gated iteration loops, and live progress",
   "type": "module",
   "scripts": {
