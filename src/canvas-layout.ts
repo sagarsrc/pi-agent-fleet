@@ -1,10 +1,24 @@
-export const NODE_W = 284;
-export const NODE_H_GAP = 200;
-export const NODE_W_GAP = 40;
+export const NODE_W = 304;
+export const NODE_H_GAP = 44;
+export const NODE_W_GAP = 156;
+
+export interface LayoutNode {
+  id: string;
+  type?: string;
+  outputs?: Array<unknown>;
+  depends_on?: string[];
+}
 
 export function excerptText(text: string, max: number): { excerpt: string; truncated: boolean } {
   const truncated = text.length > max;
   return { excerpt: truncated ? text.slice(0, max) + "…" : text, truncated };
+}
+
+export function estimateNodeHeight(node: LayoutNode): number {
+  const outputs = node.outputs?.length ?? 0;
+  const outputRows = outputs > 0 ? 1 : 0;
+  const gateRow = node.type === "reviewer" ? 18 : 0;
+  return 126 + outputRows * 26 + gateRow;
 }
 
 export function topoLayers(ids: string[], edges: Array<{ from: string; to: string }>): string[][] {
@@ -64,20 +78,69 @@ export function reduceCrossings(layers: string[][], edges: Array<{ from: string;
   return ordered;
 }
 
+function longestPathStages(ids: string[], edges: Array<{ from: string; to: string }>): string[][] {
+  const indeg: Record<string, number> = {};
+  const nextById: Record<string, string[]> = {};
+  const rank: Record<string, number> = {};
+  for (const id of ids) {
+    indeg[id] = 0;
+    nextById[id] = [];
+    rank[id] = 0;
+  }
+  for (const edge of edges) {
+    if (!(edge.from in indeg) || !(edge.to in indeg)) continue;
+    indeg[edge.to]++;
+    nextById[edge.from].push(edge.to);
+  }
+
+  const queue = ids.filter((id) => indeg[id] === 0);
+  const seen = new Set<string>();
+  for (let qi = 0; qi < queue.length; qi++) {
+    const id = queue[qi];
+    seen.add(id);
+    for (const to of nextById[id]) {
+      rank[to] = Math.max(rank[to], rank[id] + 1);
+      indeg[to]--;
+      if (indeg[to] === 0) queue.push(to);
+    }
+  }
+  for (const id of ids) {
+    if (!seen.has(id)) rank[id] = Math.max(...Object.values(rank), 0) + 1;
+  }
+
+  const rightmost = Math.max(...Object.values(rank), 0);
+  const hasOutgoing = new Set(edges.filter((edge) => edge.from in rank && edge.to in rank).map((edge) => edge.from));
+  for (const id of ids) {
+    if (!hasOutgoing.has(id)) rank[id] = rightmost;
+  }
+
+  const stages: string[][] = [];
+  for (const id of ids) (stages[rank[id]] ??= []).push(id);
+  return stages.filter(Boolean);
+}
+
 export function computePositions(
-  nodes: Array<{ id: string }>,
+  nodes: LayoutNode[],
   edges: Array<{ from: string; to: string }>,
 ): Record<string, { x: number; y: number }> {
-  const layers = reduceCrossings(topoLayers(nodes.map((node) => node.id), edges), edges);
-  const maxLayerLen = layers.reduce((max, layer) => Math.max(max, layer.length), 0);
+  const byId = Object.fromEntries(nodes.map((node) => [node.id, node]));
+  const stages = reduceCrossings(longestPathStages(nodes.map((node) => node.id), edges), edges);
   const stepX = NODE_W + NODE_W_GAP;
+  const heights = Object.fromEntries(nodes.map((node) => [node.id, estimateNodeHeight(node)]));
+  const stageHeights = stages.map((stage) => stage.reduce((sum, id, i) => sum + heights[id] + (i ? NODE_H_GAP : 0), 0));
+  const maxStageHeight = Math.max(...stageHeights, 0);
   const pos: Record<string, { x: number; y: number }> = {};
 
-  layers.forEach((layer, li) => {
-    const xOffset = ((maxLayerLen - layer.length) * stepX) / 2;
-    layer.forEach((id, ni) => {
-      pos[id] = { x: xOffset + ni * stepX, y: li * NODE_H_GAP };
+  stages.forEach((stage, si) => {
+    let y = Math.max(0, (maxStageHeight - stageHeights[si]) / 2);
+    stage.forEach((id) => {
+      const node = byId[id];
+      const fan = edges.filter((edge) => edge.from === id || edge.to === id).length;
+      const repel = Math.min(fan * 3, 24);
+      pos[id] = { x: si * stepX, y };
+      y += estimateNodeHeight(node) + NODE_H_GAP + repel;
     });
   });
+
   return pos;
 }

@@ -1,0 +1,285 @@
+{
+  "fleet_name": "multiplayer-ai-research",
+  "type": "dag",
+  "config": {
+    "max_concurrent": 5,
+    "model": "kimi-coding/kimi-for-coding",
+    "effort": "medium",
+    "warn_cost_usd": 1,
+    "loop": {
+      "gate": "reviewer",
+      "max_iterations": 2,
+      "lgtm_count": 1
+    },
+    "max_cost_usd": 3
+  },
+  "workers": [
+    {
+      "id": "method-baseline",
+      "type": "research",
+      "task": "Read context.md first. Produce a source-cited research-method baseline for this project. Cover: source evaluation, competitive landscape mapping, snowball/citation search, weak-signal scanning, technology scouting, startup opportunity analysis, evidence quality labels, anti-anchor-bias practices. Use primary/credible methodological sources where possible. Separate facts from inference. Include a reusable protocol for later workers: search surfaces, candidate intake fields, source-quality labels A-E, citation format, uncertainty handling, exclusion logging, and anti-bias safeguards for Raft/OpenSession. Do not research individual products beyond examples needed to explain method. Done criteria: markdown contains cited method notes, source-quality rubric, discovery protocol, and explicit instructions workers can reuse.",
+      "model": "deepseek/deepseek-v4-flash",
+      "effort": "medium",
+      "depends_on": [],
+      "outputs": [
+        {
+          "path": "output/method-baseline.md",
+          "kind": "markdown",
+          "required": true
+        }
+      ],
+      "iterate": true,
+      "worktree": false
+    },
+    {
+      "id": "seed-vocabulary-scan",
+      "type": "research",
+      "task": "Read context.md first. Perform only a lightweight vocabulary scan of https://raft.build/ and https://www.opensession.com/. Do not deep-dive, rank, or let these products define the category. Extract wording/taglines, category terms, collaboration terms, agent/AI terms, target-user language, workflow nouns, integrations, pricing/package clues, competitor/alternative clues, and search queries generated from this vocabulary. Label every observation as seed-derived and needing independent validation. Cite every factual claim with URL and source type. Done criteria: markdown contains separate Raft and OpenSession vocab tables, combined unbiased query expansion list, anti-anchor notes, and unknowns needing later validation.",
+      "model": "deepseek/deepseek-v4-flash",
+      "effort": "medium",
+      "depends_on": [],
+      "outputs": [
+        {
+          "path": "output/seed-vocabulary-scan.md",
+          "kind": "markdown",
+          "required": true
+        }
+      ],
+      "iterate": true,
+      "worktree": false
+    },
+    {
+      "id": "workspace-app-discovery",
+      "type": "research",
+      "task": "Read context.md first. Discover and profile multiplayer AI/shared workspace/collaborative AI app products without anchoring on Raft/OpenSession. Use at least 5 discovery surfaces across search, Product Hunt, HN, VC/startup maps, social launch posts, app directories, docs/changelogs, and alternative pages. Target buckets: multiplayer AI workspaces, collaborative canvases, meeting/session collaboration AI, team AI memory/knowledge, AI-native collaboration apps. Find at least 25 candidate products/tools, including likely relevant, adjacent, unclear, and excluded. For each candidate capture name, URL, bucket, one-line summary, target user, multiplayer primitive, AI primitive, offering type, pricing signal, traction signal, source route, relevance status, evidence quality, and sources. Cite URLs next to claims. Separate facts from inference. Done criteria: markdown report plus JSON candidate list with source routes and evidence labels.",
+      "model": "deepseek/deepseek-v4-flash",
+      "effort": "medium",
+      "depends_on": [],
+      "outputs": [
+        {
+          "path": "output/workspace-app-discovery.md",
+          "kind": "markdown",
+          "required": true
+        },
+        {
+          "path": "output/workspace-app-candidates.json",
+          "kind": "json",
+          "required": true
+        }
+      ],
+      "iterate": true,
+      "worktree": false
+    },
+    {
+      "id": "agent-builder-infra-discovery",
+      "type": "research",
+      "task": "Read context.md first. Discover and profile products/tools in agent builders, workflow automation for teams, multi-agent frameworks, developer tools, runtimes, SDKs, and orchestration platforms. Include SaaS, API/SDK, open-source, managed cloud, and enterprise platforms. Use at least 5 discovery surfaces including GitHub, docs, launch databases, search, VC/startup maps, and communities. Find at least 25 candidates/tools. For each capture name, URL, bucket, developer/team user, core workflow, multiplayer/team primitive if any, agent primitive, capabilities, offering type, open-source/cloud split, pricing signal, traction signal including GitHub if relevant, source route, relevance status, evidence quality, and sources. Cite URLs next to claims. Separate facts from inference and mark single-player/adjacent tools clearly. Done criteria: markdown report plus JSON candidate list.",
+      "model": "deepseek/deepseek-v4-flash",
+      "effort": "medium",
+      "depends_on": [],
+      "outputs": [
+        {
+          "path": "output/agent-builder-infra-discovery.md",
+          "kind": "markdown",
+          "required": true
+        },
+        {
+          "path": "output/agent-builder-infra-candidates.json",
+          "kind": "json",
+          "required": true
+        }
+      ],
+      "iterate": true,
+      "worktree": false
+    },
+    {
+      "id": "ops-memory-governance-discovery",
+      "type": "research",
+      "task": "Read context.md first. Discover and profile agent ops, human-in-loop, governance, evals, observability, shared memory/context, team knowledge, permissions, audit, and compliance tools relevant to multiplayer AI. Include products that may not market as multiplayer but provide primitives required for teams supervising or sharing AI agents. Use at least 5 discovery surfaces including docs, GitHub, search, customer stories, pricing pages, HN/Product Hunt, and VC/company pages. Find at least 20 candidates/tools. For each capture name, URL, bucket, primitive supported, target user, capabilities, offering type, pricing signal, traction signal, source route, relevance status, evidence quality, and sources. Cite URLs next to claims. Separate facts from inference. Done criteria: markdown report plus JSON candidate list.",
+      "model": "deepseek/deepseek-v4-flash",
+      "effort": "medium",
+      "depends_on": [],
+      "outputs": [
+        {
+          "path": "output/ops-memory-governance-discovery.md",
+          "kind": "markdown",
+          "required": true
+        },
+        {
+          "path": "output/ops-memory-governance-candidates.json",
+          "kind": "json",
+          "required": true
+        }
+      ],
+      "iterate": true,
+      "worktree": false
+    },
+    {
+      "id": "incumbents-verticals-discovery",
+      "type": "research",
+      "task": "Read context.md first. Discover and profile incumbents and vertical AI products where multiplayer/team collaboration matters: Slack/Microsoft/Google/Atlassian/Notion/Linear/Airtable/Coda, customer support/sales AI agents with human handoff, code/dev multiplayer AI tools, and vertical workflow tools. Use at least 5 discovery surfaces including product docs, pricing pages, customer stories, launch posts, app marketplaces, search, and social/HN/Product Hunt. Find at least 25 candidates/tools, marking true multiplayer AI vs AI feature in existing multiplayer suite vs adjacent/excluded. For each capture name, URL, bucket, buyer/user, workflow, collaboration primitive, AI primitive, offering type, pricing signal, traction signal, source route, relevance status, evidence quality, and sources. Cite URLs next to claims. Separate facts from inference. Done criteria: markdown report plus JSON candidate list.",
+      "model": "deepseek/deepseek-v4-flash",
+      "effort": "medium",
+      "depends_on": [],
+      "outputs": [
+        {
+          "path": "output/incumbents-verticals-discovery.md",
+          "kind": "markdown",
+          "required": true
+        },
+        {
+          "path": "output/incumbents-verticals-candidates.json",
+          "kind": "json",
+          "required": true
+        }
+      ],
+      "iterate": true,
+      "worktree": false
+    },
+    {
+      "id": "product-database-builder",
+      "type": "write",
+      "task": "Read context.md first, then read outputs from method-baseline, seed-vocabulary-scan, workspace-app-discovery, agent-builder-infra-discovery, ops-memory-governance-discovery, and incumbents-verticals-discovery. Consolidate candidates into repo-relative research/multiplayer-ai/product-database.json and research/multiplayer-ai/products.md. Deduplicate by product/org URL. Preserve source routes and evidence labels. Ensure broad universe has 50+ products/tools across 10+ buckets, with likely relevant, adjacent, unclear, and excluded statuses. For each product include fields from context.md deep-dive template where available; use null/unknown where not verified. Cite source URLs in markdown; in JSON include sources array with url, claim, source_type, evidence_label, accessed_date if known. Separate facts from inference in fields. Do not mutate context.md. Done criteria: valid JSON database plus readable markdown product catalog with exclusions and research gaps.",
+      "model": "deepseek/deepseek-v4-flash",
+      "effort": "medium",
+      "depends_on": [
+        "method-baseline",
+        "seed-vocabulary-scan",
+        "workspace-app-discovery",
+        "agent-builder-infra-discovery",
+        "ops-memory-governance-discovery",
+        "incumbents-verticals-discovery"
+      ],
+      "outputs": [
+        {
+          "path": "research/multiplayer-ai/product-database.json",
+          "kind": "json",
+          "required": true
+        },
+        {
+          "path": "research/multiplayer-ai/products.md",
+          "kind": "markdown",
+          "required": true
+        }
+      ],
+      "iterate": true,
+      "worktree": false
+    },
+    {
+      "id": "matrices-taxonomy-writer",
+      "type": "write",
+      "task": "Read context.md first, then read all upstream discovery outputs plus research/multiplayer-ai/product-database.json from product-database-builder. Produce repo-relative research/multiplayer-ai/category-taxonomy.md and research/multiplayer-ai/matrices.md plus research/multiplayer-ai/matrices.json. Build required matrices: category map product→bucket→user→core workflow; capability matrix product→capabilities→evidence links; offering matrix product→SaaS/API/SDK/open-source/enterprise/vertical; pricing matrix product→free/trial/seat/usage/enterprise/public-hidden; traction matrix product→customers/funding/GitHub/social/changelog velocity. Include definitions for 10+ categories and axes explaining buying behavior. Use evidence labels and cite URLs next to claims in markdown. Separate facts from inference. Mark unknowns instead of guessing. Done criteria: taxonomy and matrices suitable for continuing research later, with 50+ products represented and source-linked evidence.",
+      "model": "deepseek/deepseek-v4-flash",
+      "effort": "medium",
+      "depends_on": [
+        "product-database-builder"
+      ],
+      "outputs": [
+        {
+          "path": "research/multiplayer-ai/category-taxonomy.md",
+          "kind": "markdown",
+          "required": true
+        },
+        {
+          "path": "research/multiplayer-ai/matrices.md",
+          "kind": "markdown",
+          "required": true
+        },
+        {
+          "path": "research/multiplayer-ai/matrices.json",
+          "kind": "json",
+          "required": true
+        }
+      ],
+      "iterate": true,
+      "worktree": false
+    },
+    {
+      "id": "founder-memo-writer",
+      "type": "write",
+      "task": "Read context.md first, then read all upstream discovery outputs, research/multiplayer-ai/product-database.json, category-taxonomy.md, and matrices.md. Produce repo-relative research/multiplayer-ai/founder-opportunity-memo.md and research/multiplayer-ai/research-gaps.md. Memo audience: founder deciding what to build. Include unbiased landscape summary, category taxonomy, where multiplayer AI is necessary vs cosmetic, traction/demand signals, weak execution areas, infra gaps, adoption channels, underserved workflows, and opportunity scoring table using pain, frequency, budget, AI fit, multiplayer fit, competition, MVP feasibility, speed to revenue. Separate facts from inference with explicit labels. Cite sources next to factual claims. Do not over-index on Raft/OpenSession; compare them only after independent taxonomy. Include build/no-build recommendations, top 3-5 wedges, risks, and next research tasks. Done criteria: source-cited memo plus gaps file with verification backlog and products needing demos.",
+      "model": "deepseek/deepseek-v4-flash",
+      "effort": "medium",
+      "depends_on": [
+        "product-database-builder",
+        "matrices-taxonomy-writer"
+      ],
+      "outputs": [
+        {
+          "path": "research/multiplayer-ai/founder-opportunity-memo.md",
+          "kind": "markdown",
+          "required": true
+        },
+        {
+          "path": "research/multiplayer-ai/research-gaps.md",
+          "kind": "markdown",
+          "required": true
+        }
+      ],
+      "iterate": true,
+      "worktree": false
+    },
+    {
+      "id": "quality-reviewer",
+      "type": "reviewer",
+      "task": "Read context.md first, then review every worker output and repo-relative research/multiplayer-ai files. Write output/review.md. The review file must start with exactly one of: verdict: lgtm / verdict: iterate / verdict: escalate. After that first line, provide specific actionable per-worker feedback. Check hard requirements: workers read context.md, sources cited next to claims, facts separated from inference, source quality labels used, no anchoring bias toward Raft/OpenSession, 50+ products/tools across 10+ buckets, 5+ discovery surfaces, broad candidate universe, capability/offering/pricing/traction matrices, category taxonomy, founder opportunity memo, markdown/json outputs under repo, no mutation of context.md. Choose lgtm only if outputs are thorough, source-cited, and continuation-ready. Choose iterate if specific fixable gaps remain. Choose escalate if blocked by missing web/source access, invalid/missing outputs, or irreconcilable scope problems.",
+      "model": "deepseek/deepseek-v4-flash",
+      "effort": "medium",
+      "depends_on": [
+        "founder-memo-writer",
+        "matrices-taxonomy-writer"
+      ],
+      "outputs": [
+        {
+          "path": "output/review.md",
+          "kind": "verdict",
+          "required": true
+        }
+      ],
+      "iterate": true,
+      "worktree": false
+    },
+    {
+      "id": "known-example-deep-dive",
+      "type": "research",
+      "task": "Read context.md and the method-baseline output first (protocol sections 2-9 of output/method-baseline.md are normative). Then read the seed-vocabulary-scan output (for the seed-derived vocabulary, treated as hypotheses only) and the workspace-app-discovery output (for the independent landscape taxonomy). Perform context.md Phase 4: known-example deep dives for https://raft.build/ and https://www.opensession.com/ ONLY. Hard anti-anchor rules: (1) do NOT let these two products define or re-derive any category - use the independent taxonomy from workspace-app-discovery, never create categories from these products' marketing; (2) all observations from their sites are labeled seed-derived/primary-marketing (evidence B) unless independently verified; (3) adoption/traction claims need at least one independent source beyond their own sites. For each product capture: website positioning/tagline, docs, pricing page, blog, changelog; exact-name + founder/team search results; alternatives/competitors named by others; X/Product Hunt/HN/GitHub mentions; multiplayer primitive and AI primitive (use the enums in method-baseline section 8); capabilities; offering type; pricing model and public numbers; traction signals with sources; unknowns. Cite every claim with URL, source type, evidence label A-E, and accessed_date. Separate facts from inference in verified_facts[] vs inferences[] arrays. Produce a markdown report with separate Raft and OpenSession sections plus a comparison section that uses ONLY the independent taxonomy, plus a verification backlog of claims needing live checks and products needing demos.",
+      "depends_on": [
+        "method-baseline",
+        "seed-vocabulary-scan",
+        "workspace-app-discovery"
+      ],
+      "outputs": [
+        {
+          "path": "output/known-example-deep-dives.md",
+          "kind": "markdown",
+          "required": true
+        }
+      ],
+      "iterate": true,
+      "worktree": false
+    },
+    {
+      "id": "live-verification-sweep",
+      "type": "research",
+      "task": "Read context.md and the method-baseline output first (protocol sections 2-9 of output/method-baseline.md are normative). Read research/multiplayer-ai/product-database.json and research/multiplayer-ai/products.md produced by product-database-builder. Perform a live verification sweep of every product/tool record in the database: (1) confirm the canonical_url resolves and record HTTP status; (2) confirm the pricing page exists and capture current public entry price, per-seat price, and free tier if visible, with accessed_date; (3) re-check evidence labels A-E against what is actually on the page - upgrade or downgrade each label with a one-line reason; (4) record accessed_date for every URL checked; (5) log dead links, redirects, and renamed products with old->new URL mappings. Do NOT add new products; only verify and correct existing records. Do NOT guess: anything you cannot verify is marked verification_status=unverified with a reason and added to the verification backlog. Produce output/verification-sweep.md (REQUIRED) containing per-product verification tables, a corrections log, and the updated verification backlog, and output/verification-sweep.json (REQUIRED) containing an array of per-product verification records: {id, name, canonical_url, url_status, http_status, pricing_observed, evidence_label_revised, evidence_label_reason, accessed_date, notes}. Cite URLs next to claims. Separate facts from inference.",
+      "depends_on": [
+        "method-baseline",
+        "product-database-builder"
+      ],
+      "outputs": [
+        {
+          "path": "output/verification-sweep.md",
+          "kind": "markdown",
+          "required": true
+        },
+        {
+          "path": "output/verification-sweep.json",
+          "kind": "json",
+          "required": true
+        }
+      ],
+      "iterate": true,
+      "worktree": false
+    }
+  ]
+}

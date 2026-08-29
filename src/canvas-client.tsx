@@ -90,6 +90,9 @@ function minimapColor(status: string): string {
   if (status === "killed" || status === "blocked") return cssVar("--wire");
   return cssVar("--line");
 }
+function shortModel(model: string): string {
+  return model.split("/").pop()?.replace(/^deepseek-/, "") || model;
+}
 function j<T>(u: string): Promise<T> {
   return fetch(u).then((r) => {
     if (!r.ok) throw new Error(String(r.status));
@@ -103,6 +106,7 @@ type FleetNodeData = {
   selected: boolean;
   demo: boolean;
   gate: boolean;
+  nodeRole: "start" | "end" | "gate" | "normal";
   fleet: string | null;
   onOpen: (id: string) => void;
 };
@@ -110,6 +114,7 @@ type FleetNodeData = {
 function FleetNode({ data }: NodeProps<Node<FleetNodeData>>) {
   const { view: n, selected } = data;
   const running = n.status === "running";
+  const roleLabel = data.nodeRole === "start" ? "START" : data.nodeRole === "end" ? "END" : data.nodeRole === "gate" ? "GATE" : null;
 
   const flags: Array<{ label: string; title: string }> = [];
   if (data.gate) flags.push({ label: "⟳ loop gate", title: "Reviewer gate: its verdict decides whether the fleet iterates again" });
@@ -129,7 +134,7 @@ function FleetNode({ data }: NodeProps<Node<FleetNodeData>>) {
 
   return (
     <div
-      className={"node " + statusClass(n.status) + (selected ? " sel" : "")}
+      className={"node " + statusClass(n.status) + " role-" + data.nodeRole + (selected ? " sel" : "")}
       data-node-id={n.id}
       role="button"
       tabIndex={0}
@@ -138,28 +143,28 @@ function FleetNode({ data }: NodeProps<Node<FleetNodeData>>) {
       onClick={activate}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(); } }}
     >
-      <Handle type="target" position={Position.Top} />
-      <Handle type="target" position={Position.Top} id="loopIn" />
+      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={Position.Bottom} id="loopIn" />
       <div className="card-body">
         <div className="node-header">
           <span className={"node-dot" + (running ? " pulse" : "")} style={{ background: minimapColor(n.status) }} aria-hidden="true" />
           <span className="id" title={n.id}>{n.id}</span>
+          {roleLabel && <span className="role-badge">{roleLabel}</span>}
           <span className="badge">{n.type}</span>
         </div>
         <div className="status-row">
           {running && <span className="spinner" />}
           <span className="st-word">{n.status}</span>
           {n.effort && <><span>·</span><span>{n.effort}</span></>}
-          <span>·</span><span>{n.model}</span>
+          <span>·</span><span title={n.model}>{shortModel(n.model)}</span>
         </div>
         <div className="stats">
           {(n.turns | 0)} turns · {(Number(n.tokens || 0) / 1000).toFixed(1)}k tok · ${Number(n.cost_usd_estimate || 0).toFixed(2)}
         </div>
         {n.outputs?.length > 0 && (
           <div className="outputs">
-            {n.outputs.map((o, i) => (
-              <span className="out-chip" key={i}>{o.path} · {o.kind}</span>
-            ))}
+            <span className="out-count" title={n.outputs.map((o) => `${o.path} · ${o.kind}`).join("\n")}>{n.outputs.length} output{n.outputs.length === 1 ? "" : "s"}</span>
+            <span className="out-chip">{n.outputs[0].kind}</span>
           </div>
         )}
         {flags.length > 0 && (
@@ -172,7 +177,7 @@ function FleetNode({ data }: NodeProps<Node<FleetNodeData>>) {
         {n.status_note && <div className="note nodrag">{n.status_note}</div>}
         {failReason && <div className="fail-reason nodrag">{failReason}</div>}
       </div>
-      <Handle type="source" position={Position.Bottom} />
+      <Handle type="source" position={Position.Right} />
       <Handle type="source" position={Position.Bottom} id="loop" />
     </div>
   );
@@ -573,12 +578,14 @@ function Flow() {
     const gateId = payload.loop
       ? (payload.nodes.find((n) => n.id === payload.loop!.gate) ?? payload.nodes.find((n) => n.type === payload.loop!.gate))?.id
       : undefined;
+    const hasOutgoing = new Set(payload.edges.map((e) => e.from));
     setNodes((prev) => {
       const byId: Record<string, Node<FleetNodeData>> = {};
       prev.forEach((n) => { byId[n.id] = n; });
       return payload.nodes.map((v) => {
         const existing = byId[v.id];
-        const data: FleetNodeData = { view: v, selected: selected === v.id, demo, gate: v.id === gateId, fleet, onOpen };
+        const nodeRole: FleetNodeData["nodeRole"] = v.id === gateId ? "gate" : v.depends_on.length === 0 ? "start" : !hasOutgoing.has(v.id) ? "end" : "normal";
+        const data: FleetNodeData = { view: v, selected: selected === v.id, demo, gate: v.id === gateId, nodeRole, fleet, onOpen };
         return existing
           ? { ...existing, data }
           : { id: v.id, type: "fleet", position: pos[v.id] ?? { x: 0, y: 0 }, data, width: NODE_W };
@@ -593,7 +600,11 @@ function Flow() {
       id: "e" + i,
       source: e.from,
       target: e.to,
+      type: "smoothstep",
+      pathOptions: { borderRadius: 18 },
       animated: payload.nodes.find((n) => n.id === e.to)?.status === "running",
+      style: { strokeWidth: 1.6 },
+      markerEnd: { type: MarkerType.ArrowClosed, color: "var(--edge)" } as Edge["markerEnd"],
     }));
 
     // feedback loop: the gate node re-triggers the iterate roots each iteration

@@ -86,6 +86,20 @@ describe("parseSessionTail", () => {
     expect(out.entries[0].text.length).toBe(4001); // 4000 + ellipsis
     expect(out.entries[0].text.endsWith("…")).toBe(true);
   });
+
+  it("caps huge tool call arguments so session sidebar payload stays small", () => {
+    const jsonl = JSON.stringify({
+      type: "message",
+      message: {
+        role: "assistant",
+        content: [{ type: "toolCall", name: "write", arguments: { path: "output/report.md", content: "x".repeat(100_000) } }],
+      },
+    });
+    const out = parseSessionTail(jsonl, 30);
+    expect(JSON.stringify(out).length).toBeLessThan(10_000);
+    expect(out.actions[0].arguments).toEqual({ path: "output/report.md", content: "[omitted 100000 chars]" });
+    expect(out.events[0]).toMatchObject({ type: "tool_call", arguments: { path: "output/report.md", content: "[omitted 100000 chars]" } });
+  });
 });
 
 describe("renderCanvasPage", () => {
@@ -106,6 +120,16 @@ describe("renderCanvasPage", () => {
     expect(html).toContain("Instructions (task prompt)");
     expect(html).toContain("show more");
     expect(html).toContain("show less");
+  });
+
+  it("ships start, end, and gate node treatments", async () => {
+    const html = await renderCanvasPage();
+    expect(html).toContain("START");
+    expect(html).toContain("END");
+    expect(html).toContain("GATE");
+    expect(html).toContain("role-start");
+    expect(html).toContain("role-end");
+    expect(html).toContain("role-gate");
   });
 });
 
