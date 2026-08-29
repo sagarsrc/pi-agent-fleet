@@ -282,6 +282,7 @@ export async function startLoop(fleet: ActiveFleet, ctx: ExtensionContext, resum
           repoCwd: worktreeCwd,
           sessionDir,
           thinkingLevel: effort,
+          extensionAllowlist: fleet.spec.config.worker_extensions,
           sessionFactory: resolvedModel ? sessionFactoryForModel(resolvedModel) : undefined,
           onSession: (s) => registerNodeSession(fleet, nodeId, s),
           onEvent: (e) => {

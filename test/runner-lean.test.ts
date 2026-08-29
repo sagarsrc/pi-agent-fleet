@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { defaultSessionFactory, sessionFactoryForModel } from "../src/runner.js";
+import { defaultSessionFactory, sessionFactoryForModel, filterExtensionsByAllowlist } from "../src/runner.js";
 
 const fakeSession = {
   prompt: async () => {},
@@ -45,6 +45,29 @@ async function assertEmptyResourceLoader(loader: {
   expect(loader.getAppendSystemPrompt()).toEqual([]);
 }
 
+describe("filterExtensionsByAllowlist", () => {
+  const exts: Array<{ path: string }> = [
+    { path: "npm:opencode-pi" },
+    { path: "npm:pi-web-access" },
+    { path: "/Users/x/work/pi-fleet-extension/src/index.ts" },
+  ];
+
+  it("keeps only extensions whose path matches the allowlist", () => {
+    const out = filterExtensionsByAllowlist(exts, ["opencode-pi"]);
+    expect(out.map((e) => e.path)).toEqual(["npm:opencode-pi"]);
+  });
+
+  it("returns all extensions when allowlist is empty or undefined", () => {
+    expect(filterExtensionsByAllowlist(exts, [])).toHaveLength(3);
+    expect(filterExtensionsByAllowlist(exts, undefined)).toHaveLength(3);
+  });
+
+  it("matches partial path segments (e.g. local dev paths)", () => {
+    const out = filterExtensionsByAllowlist(exts, ["pi-fleet-extension"]);
+    expect(out.map((e) => e.path)).toEqual(["/Users/x/work/pi-fleet-extension/src/index.ts"]);
+  });
+});
+
 describe("lean worker sessions", () => {
   it("defaultSessionFactory passes an empty resourceLoader", async () => {
     await defaultSessionFactory({
@@ -72,5 +95,24 @@ describe("lean worker sessions", () => {
     expect(opts.model).toEqual({ provider: "test", id: "m" });
     expect(opts.resourceLoader).toBeDefined();
     await assertEmptyResourceLoader(opts.resourceLoader as Parameters<typeof assertEmptyResourceLoader>[0]);
+  });
+
+  it("allowlisted extensions survive the lean loader, others are filtered out", async () => {
+    await defaultSessionFactory({
+      cwd: "/tmp/lean",
+      sessionDir: "/tmp/lean/.sessions",
+      tools: ["read"],
+      thinkingLevel: "low",
+      extensionAllowlist: ["opencode-pi"],
+    });
+    expect(createAgentSessionCalls).toHaveLength(1);
+    const opts = createAgentSessionCalls[0] as { resourceLoader?: { reload: () => Promise<void>; getExtensions: () => { extensions: Array<{ path: string }> } } };
+    expect(opts.resourceLoader).toBeDefined();
+    await opts.resourceLoader!.reload();
+    // /tmp/lean has no real extensions installed; whatever loads, every entry must
+    // match the allowlist (pi-web-access, caveman, etc. must be gone).
+    for (const e of opts.resourceLoader!.getExtensions().extensions) {
+      expect(e.path).toContain("opencode-pi");
+    }
   });
 });

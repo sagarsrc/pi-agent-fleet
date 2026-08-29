@@ -59,6 +59,7 @@ export function registerFleetTools(pi: ExtensionAPI): void {
       effort: Type.Optional(EffortSchema),
       warn_cost_usd: Type.Optional(Type.Number()),
       max_cost_usd: Type.Optional(Type.Number()),
+      worker_extensions: Type.Optional(Type.Array(Type.String())),
       loop: Type.Optional(Type.Object({
         gate: Type.Union([Type.Literal("reviewer"), Type.Literal("none")]),
         max_iterations: Type.Number(),

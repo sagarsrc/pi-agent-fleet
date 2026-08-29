@@ -46,6 +46,9 @@ export interface FleetConfig {
   warn_cost_usd?: number;
   /** hard cap — fleet is killed when total estimated cost reaches it */
   max_cost_usd?: number;
+  /** extension path fragments to load inside worker sessions (default: none).
+   *  Needed for extension-provided model providers, e.g. ["opencode-pi"]. */
+  worker_extensions?: string[];
   loop?: LoopConfig;
 }
 

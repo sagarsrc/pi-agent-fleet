@@ -25,6 +25,7 @@ export interface SessionOpts {
   tools: string[];
   model?: string;
   thinkingLevel?: ThinkingLevelName;
+  extensionAllowlist?: string[];
 }
 
 export type SessionFactory = (opts: SessionOpts) => Promise<AgentSessionLike>;
@@ -32,11 +33,25 @@ export type SessionFactory = (opts: SessionOpts) => Promise<AgentSessionLike>;
 // Fleet workers must not load user extensions/skills: reading global skill files
 // burns tokens mid-task, and extensions like pi-web-access run background async work
 // that can crash the pi process after the session is disposed.
-async function createLeanResourceLoader(cwd: string): Promise<DefaultResourceLoader> {
+// Exception: some model providers are registered BY extensions (e.g. opencode-pi
+// registers the opencode-cli provider). worker_extensions allowlists exactly those.
+export function filterExtensionsByAllowlist<T extends { path: string }>(
+  extensions: T[],
+  allowlist: string[] | undefined,
+): T[] {
+  if (!allowlist || allowlist.length === 0) return extensions;
+  return extensions.filter((e) => allowlist.some((a) => e.path.includes(a)));
+}
+
+async function createLeanResourceLoader(cwd: string, extensionAllowlist?: string[]): Promise<DefaultResourceLoader> {
+  const allow = extensionAllowlist && extensionAllowlist.length > 0;
   const loader = new DefaultResourceLoader({
     cwd,
     agentDir: cwd,
-    noExtensions: true,
+    noExtensions: !allow,
+    extensionsOverride: allow
+      ? (base) => ({ ...base, extensions: filterExtensionsByAllowlist(base.extensions, extensionAllowlist) })
+      : undefined,
     noSkills: true,
     noPromptTemplates: true,
     noThemes: true,
@@ -49,7 +64,7 @@ async function createLeanResourceLoader(cwd: string): Promise<DefaultResourceLoa
 }
 
 export const defaultSessionFactory: SessionFactory = async (opts) => {
-  const resourceLoader = await createLeanResourceLoader(opts.cwd);
+  const resourceLoader = await createLeanResourceLoader(opts.cwd, opts.extensionAllowlist);
   const { session } = await createAgentSession({
     cwd: opts.cwd,
     tools: opts.tools,
@@ -70,6 +85,7 @@ export interface RunWorkerOpts {
   onSession?: (session: AgentSessionLike) => void;
   sessionFactory?: SessionFactory;
   thinkingLevel?: ThinkingLevelName;
+  extensionAllowlist?: string[];
 }
 
 export interface RunWorkerResult {
@@ -90,6 +106,7 @@ export async function runWorker(opts: RunWorkerOpts): Promise<RunWorkerResult> {
       tools: WORKER_TYPE_TOOLS[opts.worker.type],
       model: opts.worker.model,
       thinkingLevel: opts.thinkingLevel,
+      extensionAllowlist: opts.extensionAllowlist,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -154,7 +171,7 @@ export async function runWorker(opts: RunWorkerOpts): Promise<RunWorkerResult> {
 
 export function sessionFactoryForModel(model: Model<Api>): SessionFactory {
   return async (opts) => {
-    const resourceLoader = await createLeanResourceLoader(opts.cwd);
+    const resourceLoader = await createLeanResourceLoader(opts.cwd, opts.extensionAllowlist);
     const { session } = await createAgentSession({
       cwd: opts.cwd,
       tools: opts.tools,
